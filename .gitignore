@@ -29,3 +29,7 @@ _testmain.go
 .DS_Store
 static/logs
 static/img/avatars
+cheesy-arena-custom
+game/generated_*.go
+templates/*_generated.html
+.linemate/
