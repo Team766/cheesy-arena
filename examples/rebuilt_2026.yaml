@@ -1,0 +1,76 @@
+game:
+  name: "Rebuilt 2026"
+
+fouls:
+  minor_foul_points: 5
+  major_foul_points: 15
+
+game_pieces:
+  - id: fuel
+    display_name: "Fuel"
+
+scoring_counts:
+  - id: hub
+    display_name: "Hub"
+    game_piece: fuel
+    phase: both
+    points_auto: 1
+    points_teleop: 1
+
+endgame_counts: []
+
+statuses:
+  - id: auto_tower
+    display_name: "Auto Tower"
+    phase: auto
+    values:
+      - id: none
+        display_name: "None"
+        points: 0
+      - id: l1
+        display_name: "Level 1"
+        points: 15
+      - id: l2
+        display_name: "Level 2"
+        points: 15
+      - id: l3
+        display_name: "Level 3"
+        points: 15
+
+  - id: endgame_tower
+    display_name: "Endgame Tower"
+    phase: endgame
+    values:
+      - id: none
+        display_name: "None"
+        points: 0
+      - id: l1
+        display_name: "Level 1"
+        points: 10
+      - id: l2
+        display_name: "Level 2"
+        points: 20
+      - id: l3
+        display_name: "Level 3"
+        points: 30
+
+ranking_points:
+  - id: energized_rp
+    display_name: "Energized Bonus"
+    logic_func: "ComputeEnergizedRP"
+
+  - id: supercharged_rp
+    display_name: "Supercharged Bonus"
+    logic_func: "ComputeSuperchargedRP"
+
+  - id: traversal_rp
+    display_name: "Traversal Bonus"
+    logic_func: "ComputeTraversalRP"
+
+ranking_tiebreakers:
+  - metric: hub
+  - metric: endgame_tower
+
+playoff_tiebreakers:
+  - metric: hub
+  - metric: endgame_tower

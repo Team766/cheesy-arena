@@ -1,7 +1,7 @@
 // Copyright 2014 Team 254. All Rights Reserved.
 // Author: pat@patfairbank.com (Patrick Fairbank)
 //
-// Methods for publishing data to and retrieving data from The Blue Alliance.
+//go:build !custom
 
 package partner
 

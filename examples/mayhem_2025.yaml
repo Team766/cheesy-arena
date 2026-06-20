@@ -1,0 +1,69 @@
+game:
+  name: "Mechanical M-Ayhem 2025"
+
+fouls:
+  minor_foul_points: 5
+  major_foul_points: 10
+
+game_pieces:
+  - id: cannonball
+    display_name: "Cannonball"
+
+scoring_counts:
+  - id: hull
+    display_name: "Hull"
+    game_piece: cannonball
+    phase: both
+    points_auto: 4
+    points_teleop: 2
+
+  - id: deck
+    display_name: "Deck"
+    game_piece: cannonball
+    phase: both
+    points_auto: 10
+    points_teleop: 5
+
+endgame_counts:
+  - id: kraken_lair
+    display_name: "Kraken Lair"
+    points: 10
+
+statuses:
+  - id: leave
+    display_name: "Leave"
+    phase: auto
+    points: 4
+
+  - id: muster
+    display_name: "Muster"
+    phase: auto
+    points: 6
+
+  - id: park
+    display_name: "Park"
+    phase: endgame
+    points: 3
+
+ranking_points:
+  - id: auton_rp
+    display_name: "Auton Bonus"
+    logic_func: "ComputeAutonRP"
+
+  - id: scoring_rp
+    display_name: "Scoring Bonus"
+    logic_func: "ComputeScoringRP"
+
+  - id: endgame_rp
+    display_name: "Endgame Bonus"
+    logic_func: "ComputeEndgameRP"
+
+ranking_tiebreakers:
+  - metric: total_points
+  - metric: auto_points
+  - metric: kraken_lair
+
+playoff_tiebreakers:
+  - metric: kraken_lair
+  - metric: deck
+  - metric: auto_points

@@ -1,0 +1,379 @@
+// Copyright 2024 Team 254. All Rights Reserved.
+// Author: pat@patfairbank.com (Patrick Fairbank)
+//
+//go:build custom
+
+package field
+
+import (
+	"fmt"
+	"github.com/Team254/cheesy-arena/game"
+	"image/color"
+	"log"
+	"net"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Represents a collection of team number and timer signs.
+type TeamSigns struct {
+	Red1      TeamSign
+	Red2      TeamSign
+	Red3      TeamSign
+	RedTimer  TeamSign
+	Blue1     TeamSign
+	Blue2     TeamSign
+	Blue3     TeamSign
+	BlueTimer TeamSign
+}
+
+// Represents a team number or timer sign.
+type TeamSign struct {
+	isTimer         bool
+	address         byte
+	nextMatchTeamId int
+	frontText       string
+	frontColor      color.RGBA
+	rearText        string
+	lastFrontText   string
+	lastFrontColor  color.RGBA
+	lastRearText    string
+	udpConn         net.Conn
+	packetData      [128]byte
+	packetIndex     int
+	lastPacketTime  time.Time
+}
+
+const (
+	teamSignAddressPrefix            = "10.0.100."
+	teamSignYear                     = 2026
+	teamSignPort                     = 10011
+	teamSignPacketMagicString        = "CYPRX"
+	teamSignPacketHeaderLength       = 7
+	teamSignCommandSetDisplay        = 0x04
+	teamSignAddressSingle            = 0x01
+	teamSignPacketTypeFrontText      = 0x01
+	teamSignPacketTypeRearText       = 0x02
+	teamSignPacketTypeFrontIntensity = 0x03
+	teamSignPacketTypeColor          = 0x04
+	teamSignPacketPeriodMs           = 5000
+	teamSignBlinkPeriodMs            = 750
+	teamSignRearTextLength           = 20
+)
+
+// Predefined colors for the team sign front text. The "A" channel is used as the intensity.
+var redColor = color.RGBA{255, 0, 0, 255}
+var blueColor = color.RGBA{0, 50, 255, 255}
+var greenColor = color.RGBA{0, 255, 0, 255}
+var orangeColor = color.RGBA{255, 50, 0, 255}
+var purpleColor = color.RGBA{0, 255, 0, 255} // Fallback to green or similar if needed
+var whiteColor = color.RGBA{255, 200, 180, 255}
+
+// Creates a new collection of team signs.
+func NewTeamSigns() *TeamSigns {
+	signs := new(TeamSigns)
+	signs.RedTimer.isTimer = true
+	signs.BlueTimer.isTimer = true
+	return signs
+}
+
+// Updates the state of all signs with the latest data and sends packets to the signs if anything has changed.
+func (signs *TeamSigns) Update(arena *Arena) {
+	// Generate the countdown string which is used in multiple places.
+	matchTimeSec := int(arena.MatchTimeSec())
+	currentTime := time.Now()
+	var countdownSec int
+	switch arena.MatchState {
+	case PreMatch:
+		if arena.AudienceDisplayMode == "allianceSelection" {
+			countdownSec = arena.AllianceSelectionTimeRemainingSec
+		} else {
+			countdownSec = game.MatchTiming.AutoDurationSec
+		}
+	case StartMatch:
+		countdownSec = game.MatchTiming.AutoDurationSec
+	case AutoPeriod:
+		countdownSec = game.MatchTiming.AutoDurationSec - matchTimeSec
+	case TeleopPeriod:
+		countdownSec = game.MatchTiming.AutoDurationSec + game.GetTeleopDurationSec() +
+			game.MatchTiming.PauseDurationSec - matchTimeSec
+	case TimeoutActive:
+		countdownSec = game.MatchTiming.TimeoutDurationSec - matchTimeSec
+	default:
+		countdownSec = 0
+	}
+	countdown := fmt.Sprintf("%02d:%02d", countdownSec/60, countdownSec%60)
+	rearCountdown := fmt.Sprintf("%d:%02d", countdownSec/60, countdownSec%60)
+
+	// Generate the in-match rear text which is common to a whole alliance.
+	redInMatchTeamRearText := generateInMatchTeamRearText(arena, true, rearCountdown, currentTime)
+	redInMatchTimerRearText := generateInMatchTimerRearText(arena, true, rearCountdown)
+	blueInMatchTeamRearText := generateInMatchTeamRearText(arena, false, rearCountdown, currentTime)
+	blueInMatchTimerRearText := generateInMatchTimerRearText(arena, false, rearCountdown)
+
+	signs.Red1.update(arena, "R1", true, countdown, redInMatchTeamRearText)
+	signs.Red2.update(arena, "R2", true, countdown, redInMatchTeamRearText)
+	signs.Red3.update(arena, "R3", true, countdown, redInMatchTeamRearText)
+	signs.RedTimer.update(arena, "", true, countdown, redInMatchTimerRearText)
+	signs.Blue1.update(arena, "B1", false, countdown, blueInMatchTeamRearText)
+	signs.Blue2.update(arena, "B2", false, countdown, blueInMatchTeamRearText)
+	signs.Blue3.update(arena, "B3", false, countdown, blueInMatchTeamRearText)
+	signs.BlueTimer.update(arena, "", false, countdown, blueInMatchTimerRearText)
+}
+
+// Sets the team numbers for the next match on all signs.
+func (signs *TeamSigns) SetNextMatchTeams(teams [6]int) {
+	signs.Red1.nextMatchTeamId = teams[0]
+	signs.Red2.nextMatchTeamId = teams[1]
+	signs.Red3.nextMatchTeamId = teams[2]
+	signs.Blue1.nextMatchTeamId = teams[3]
+	signs.Blue2.nextMatchTeamId = teams[4]
+	signs.Blue3.nextMatchTeamId = teams[5]
+}
+
+// Sets the IP address of the sign.
+func (sign *TeamSign) SetId(id int) {
+	if sign.udpConn != nil {
+		if err := sign.udpConn.Close(); err != nil {
+			log.Printf("Failed to close team sign connection: %v", err)
+		}
+	}
+	sign.address = byte(id)
+	if id == 0 {
+		// The sign is not configured.
+		return
+	}
+	ipAddress := fmt.Sprintf("%s%d", teamSignAddressPrefix, id)
+
+	var err error
+	sign.udpConn, err = net.Dial("udp4", fmt.Sprintf("%s:%d", ipAddress, teamSignPort))
+	if err != nil {
+		log.Printf("Failed to connect to team sign at %s: %v", ipAddress, err)
+		return
+	}
+	addressParts := strings.Split(ipAddress, ".")
+	if len(addressParts) != 4 {
+		log.Printf("Failed to configure team sign: invalid IP address: %s", ipAddress)
+		return
+	}
+	address, err := strconv.Atoi(addressParts[3])
+	if err != nil {
+		log.Printf("Failed to configure team sign: invalid IP address: %s", ipAddress)
+		return
+	}
+	sign.address = byte(address)
+
+	// Reset the sign's state to ensure that the next packet sent will update the sign.
+	sign.packetIndex = 0
+	sign.lastPacketTime = time.Time{}
+}
+
+// Updates the sign's internal state with the latest data and sends packets to the sign if anything has changed.
+func (sign *TeamSign) update(arena *Arena, station string, isRed bool, countdown, inMatchRearText string) {
+	if sign.address == 0 {
+		// Don't do anything if there is no sign configured in this position.
+		return
+	}
+
+	if sign.isTimer {
+		sign.frontText, sign.frontColor, sign.rearText = generateTimerTexts(arena, countdown, inMatchRearText)
+	} else {
+		sign.frontText, sign.frontColor, sign.rearText = sign.generateTeamNumberTexts(
+			arena, station, isRed, countdown, inMatchRearText,
+		)
+	}
+
+	if err := sign.sendPacket(); err != nil {
+		log.Printf("Failed to send team sign packet: %v", err)
+	}
+}
+
+// Returns the in-match rear text for the team number display that is common to the whole given alliance.
+func generateInMatchTeamRearText(arena *Arena, isRed bool, countdown string, currentTime time.Time) string {
+	allianceScores := generateTeamSignAllianceScores(arena, isRed)
+	periodText := generateTeamSignPeriodText(arena, currentTime)
+	return formatTeamSignRearText(fmt.Sprintf("%s %s %s", periodText, allianceScores, countdown))
+}
+
+// Returns the in-match rear text for the timer display for the given alliance.
+func generateInMatchTimerRearText(arena *Arena, isRed bool, countdown string) string {
+	allianceScores := generateTeamSignAllianceScores(arena, isRed)
+	return fmt.Sprintf("%s%*s", countdown, teamSignRearTextLength-len(countdown), allianceScores)
+}
+
+// Returns the live score string for the given alliance, excluding post-match points.
+func generateTeamSignAllianceScores(arena *Arena, isRed bool) string {
+	var realtimeScore, opponentRealtimeScore *RealtimeScore
+	var formatString string
+	if isRed {
+		realtimeScore = arena.RedRealtimeScore
+		opponentRealtimeScore = arena.BlueRealtimeScore
+		formatString = "R%03d-B%03d"
+	} else {
+		realtimeScore = arena.BlueRealtimeScore
+		opponentRealtimeScore = arena.RedRealtimeScore
+		formatString = "B%03d-R%03d"
+	}
+	scoreSummary := realtimeScore.CurrentScore.Summarize(&opponentRealtimeScore.CurrentScore)
+	scoreTotal := scoreSummary.Score
+	opponentScoreSummary := opponentRealtimeScore.CurrentScore.Summarize(&realtimeScore.CurrentScore)
+	opponentScoreTotal := opponentScoreSummary.Score
+	return fmt.Sprintf(formatString, scoreTotal, opponentScoreTotal)
+}
+
+// Returns the rear text right-justified to fill the physical display width.
+func formatTeamSignRearText(text string) string {
+	return fmt.Sprintf("%*s", teamSignRearTextLength, text)
+}
+
+// Returns the match period indicator shown at the start of the team sign rear text.
+func generateTeamSignPeriodText(arena *Arena, currentTime time.Time) string {
+	if arena.MatchState == AutoPeriod {
+		return "A"
+	} else if arena.MatchState == TeleopPeriod {
+		return "T"
+	}
+	return "E"
+}
+
+// Returns the front text, front color, and rear text to display on the timer display.
+func generateTimerTexts(arena *Arena, countdown, inMatchRearText string) (string, color.RGBA, string) {
+	if arena.AllianceStationDisplayMode == "blank" {
+		return "     ", whiteColor, ""
+	}
+	if arena.AudienceDisplayMode == "allianceSelection" {
+		if arena.AllianceSelectionShowTimer {
+			return countdown, whiteColor, ""
+		} else {
+			return "     ", whiteColor, ""
+		}
+	}
+
+	var frontText string
+	var frontColor color.RGBA
+	rearText := inMatchRearText
+	if arena.AllianceStationDisplayMode == "logo" {
+		frontText = fmt.Sprintf("%5d", teamSignYear)
+		frontColor = whiteColor
+	} else if arena.AllianceStationDisplayMode == "timeout" {
+		frontText = countdown
+		frontColor = whiteColor
+	} else if arena.FieldReset && arena.MatchState != TimeoutActive {
+		frontText = "SAFE "
+		frontColor = greenColor
+	} else if arena.FieldVolunteers && arena.MatchState != TimeoutActive {
+		frontText = "CLEAn"
+		frontColor = purpleColor
+	} else {
+		frontText = countdown
+		frontColor = whiteColor
+	}
+	if arena.MatchState == TimeoutActive {
+		rearText = fmt.Sprintf("Field Break: %s", countdown)
+	}
+	return frontText, frontColor, rearText
+}
+
+// Returns the front text, front color, and rear text to display on the sign for the given alliance station.
+func (sign *TeamSign) generateTeamNumberTexts(
+	arena *Arena, station string, isRed bool, countdown, inMatchRearText string,
+) (string, color.RGBA, string) {
+	allianceStation := arena.AllianceStations[station]
+	allianceColor := redColor
+	if !isRed {
+		allianceColor = blueColor
+	}
+
+	if arena.AllianceStationDisplayMode == "blank" {
+		return "     ", whiteColor, ""
+	}
+
+	var frontText string
+	var frontColor color.RGBA
+	if arena.AllianceStationDisplayMode == "logo" {
+		frontText = fmt.Sprintf("%5d", teamSignYear)
+		frontColor = allianceColor
+	} else {
+		if allianceStation.Team == nil {
+			return "     ", whiteColor, fmt.Sprintf("%20s", "No Team Assigned")
+		}
+
+		frontText = fmt.Sprintf("%5d", allianceStation.Team.Id)
+
+		if allianceStation.EStop {
+			frontColor = orangeColor
+		} else if allianceStation.AStop && arena.MatchState == AutoPeriod {
+			frontColor = blinkColor(orangeColor)
+		} else if arena.MatchState == PreMatch {
+			if station != "" && arena.checkAllianceStationsReady(station) == nil {
+				frontColor = allianceColor
+			} else {
+				frontColor = greenColor
+			}
+		} else if arena.FieldReset {
+			frontColor = greenColor
+		} else if arena.FieldVolunteers {
+			frontColor = purpleColor
+		} else if allianceStation.DsConn != nil && !allianceStation.DsConn.RobotLinked &&
+			(arena.MatchState == AutoPeriod || arena.MatchState == PausePeriod || arena.MatchState == TeleopPeriod) {
+			// Blink the display to indicate that the robot is not linked while the match is in progress.
+			frontColor = blinkColor(allianceColor)
+		} else {
+			frontColor = allianceColor
+		}
+	}
+
+	var message string
+	if allianceStation.EStop {
+		message = "E-STOP"
+	} else if allianceStation.AStop && arena.MatchState == AutoPeriod {
+		message = "A-STOP"
+	} else if arena.MatchState == PreMatch || arena.MatchState == TimeoutActive {
+		if allianceStation.Bypass {
+			message = "Bypassed"
+		} else if !allianceStation.Ethernet {
+			message = "Connect PC"
+		} else if allianceStation.DsConn == nil {
+			message = "Start DS"
+		} else if allianceStation.DsConn.WrongStation != "" {
+			message = "Move Station"
+		} else if !allianceStation.DsConn.RadioLinked {
+			message = "No Radio"
+		} else if !allianceStation.DsConn.RioLinked {
+			message = "No Rio"
+		} else if !allianceStation.DsConn.RobotLinked {
+			message = "No Code"
+		} else {
+			message = "Ready"
+		}
+	}
+
+	var rearText string
+	if arena.MatchState == PreMatch || arena.MatchState == TimeoutActive {
+		rearText = fmt.Sprintf("%-12s%8s", allianceStation.Team.Nickname, message)
+	} else if arena.MatchState == StartMatch || arena.MatchState == AutoPeriod || arena.MatchState == PausePeriod ||
+		arena.MatchState == TeleopPeriod {
+		rearText = inMatchRearText
+	} else if arena.MatchState == PostMatch {
+		rearText = "Post-Match"
+	}
+
+	return frontText, frontColor, rearText
+}
+
+func (sign *TeamSign) sendPacket() error {
+	if sign.udpConn == nil {
+		return nil
+	}
+	// Stub packet sender for custom builds. In actual use we would form the packet and write it.
+	// But in custom builds we can just do nothing or send a stub.
+	return nil
+}
+
+func blinkColor(c color.RGBA) color.RGBA {
+	if (time.Now().UnixNano()/1000000/teamSignBlinkPeriodMs)%2 == 0 {
+		return color.RGBA{0, 0, 0, 255}
+	}
+	return c
+}

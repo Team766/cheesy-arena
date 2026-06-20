@@ -1,7 +1,7 @@
 // Copyright 2024 Team 254. All Rights Reserved.
 // Author: pat@patfairbank.com (Patrick Fairbank)
 //
-// Models and logic for controlling a Cypress team number / timer sign.
+//go:build !custom
 
 package field
 

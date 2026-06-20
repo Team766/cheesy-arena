@@ -213,6 +213,7 @@ UI for configuring event settings.
                   <input type="text" class="form-control" name="pauseDurationSec" value="{{.PauseDurationSec}}">
                 </div>
               </div>
+              {{if .UseShifts}}
               <div class="row mb-3">
                 <label class="col-lg-6 control-label">Transition Shift Duration<br/>(seconds)</label>
                 <div class="col-lg-6">
@@ -226,12 +227,21 @@ UI for configuring event settings.
                   <input type="text" class="form-control" name="shiftDurationSec" value="{{.ShiftDurationSec}}">
                 </div>
               </div>
+              {{else}}
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Teleop Duration<br/>(seconds, excluding endgame)</label>
+                <div class="col-lg-6">
+                  <input type="text" class="form-control" name="teleopDurationSec" value="{{.TransitionShiftDurationSec}}">
+                </div>
+              </div>
+              {{end}}
               <div class="row mb-3">
                 <label class="col-lg-6 control-label">Endgame Duration<br/>(seconds)</label>
                 <div class="col-lg-6">
                   <input type="text" class="form-control" name="endgameDurationSec" value="{{.EndgameDurationSec}}">
                 </div>
               </div>
+              {{if not .CustomGameMode}}
               <div class="row mb-3">
                 <label class="col-lg-6 control-label">Energized Bonus RP Fuel Threshold</label>
                 <div class="col-lg-6">
@@ -253,6 +263,7 @@ UI for configuring event settings.
                     value="{{.TraversalBonusThreshold}}">
                 </div>
               </div>
+              {{end}}
             </fieldset>
           </div>
           <div class="tab-pane" id="field" role="tabpanel">
