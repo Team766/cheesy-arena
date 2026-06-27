@@ -31,5 +31,8 @@ static/logs
 static/img/avatars
 cheesy-arena-custom
 game/generated_*.go
-templates/*_generated.html
+templates/generated_*.html
+static/js/generated_*.js
+cmd/generate/generated_*_test.go
 .linemate/
+.claude/

@@ -83,6 +83,45 @@ func main() {
 		os.Exit(1)
 	}
 
+	templatesDir := filepath.Join(destDir, "../templates")
+	staticJsDir := filepath.Join(destDir, "../static/js")
+	cmdGenerateDir := filepath.Join(destDir, "../cmd/generate")
+
+	if err := generateScoringPanelTemplate(&yamlData, templatesDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating scoring panel template: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := generateScoringPanelJS(&yamlData, staticJsDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating scoring panel JS: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := generateAudienceDisplayTemplate(&yamlData, templatesDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating audience display template: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := generateAudienceDisplayJS(&yamlData, staticJsDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating audience display JS: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := generateRefereePanelTemplate(&yamlData, templatesDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating referee panel template: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := generateRefereePanelJS(&yamlData, staticJsDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating referee panel JS: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := generateTemplateTest(&yamlData, cmdGenerateDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating template test: %v\n", err)
+		os.Exit(1)
+	}
+
 	fmt.Println("Code generation complete successfully.")
 }
 

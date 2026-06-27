@@ -49,7 +49,7 @@ func (web *Web) scoringPanelHandler(w http.ResponseWriter, r *http.Request) {
 
 	scoringPanelTemplate := "templates/scoring_panel.html"
 	if game.CustomGameMode {
-		scoringPanelTemplate = "templates/scoring_panel_generated.html"
+		scoringPanelTemplate = "templates/generated_scoring_panel.html"
 	}
 	template, err := web.parseFiles(scoringPanelTemplate, "templates/base.html")
 	if err != nil {

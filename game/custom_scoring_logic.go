@@ -7,13 +7,13 @@ package game
 // Add ComputeXRP functions referenced in the custom game's config here.
 
 func ComputeAutonRP(score Score, opponentScore Score) bool {
-	return false
+	return score.AutoGp1Level1Count >= 1
 }
 
 func ComputeScoringRP(score Score, opponentScore Score) bool {
-	return false
+	return score.TeleopGp1Level2Count >= 1
 }
 
 func ComputeEndgameRP(score Score, opponentScore Score) bool {
-	return false
+	return score.ParkStatuses[0] || score.ParkStatuses[1] || score.ParkStatuses[2]
 }

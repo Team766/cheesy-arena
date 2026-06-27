@@ -53,24 +53,15 @@ func TestCalculateRankingsCustom(t *testing.T) {
 	matchResult.RedScore.AutoGp1Level1Count = 1 // 5 points
 	database.CreateMatchResult(matchResult)
 
-	matches, _ := database.GetMatchesByType(model.Qualification, false)
-	t.Logf("DEBUG: Matches count: %d", len(matches))
-	if len(matches) > 0 {
-		t.Logf("DEBUG: Match 1 ID: %d, Status: %v, Complete: %t", matches[0].Id, matches[0].Status, matches[0].IsComplete())
-		mr, err := database.GetMatchResultForMatch(matches[0].Id)
-		t.Logf("DEBUG: GetMatchResultForMatch err: %v, found: %t", err, mr != nil)
-	}
-
 	updatedRankings, err := CalculateRankings(database, false)
-	t.Logf("DEBUG: updatedRankings count: %d, err: %v", len(updatedRankings), err)
 	assert.Nil(t, err)
 	assert.Len(t, updatedRankings, 6)
 
-	// The 3 red teams (1, 3, 5) should have 3 RP.
+	// The 3 red teams (1, 3, 5) should have 3 RP for the win plus 1 bonus RP for the AutonRP (AutoGp1Level1Count >= 1).
 	for i := 0; i < 3; i++ {
 		assert.Contains(t, []int{1, 3, 5}, updatedRankings[i].TeamId)
 		assert.Equal(t, i+1, updatedRankings[i].Rank)
-		assert.Equal(t, 3, updatedRankings[i].RankingPoints)
+		assert.Equal(t, 4, updatedRankings[i].RankingPoints)
 	}
 
 	// The 3 blue teams (2, 4, 6) should have 0 RP.

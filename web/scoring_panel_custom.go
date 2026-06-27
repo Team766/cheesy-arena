@@ -43,7 +43,7 @@ func (web *Web) scoringPanelHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scoringPanelTemplate := "templates/scoring_panel_generated.html"
+	scoringPanelTemplate := "templates/generated_scoring_panel.html"
 	template, err := web.parseFiles(scoringPanelTemplate, "templates/base.html")
 	if err != nil {
 		handleWebErr(w, err)
@@ -107,6 +107,14 @@ func (web *Web) scoringPanelWebsocketHandler(w http.ResponseWriter, r *http.Requ
 			return
 		}
 
+		var score *game.Score
+		if position == "red" {
+			score = &web.arena.RedRealtimeScore.CurrentScore
+		} else {
+			score = &web.arena.BlueRealtimeScore.CurrentScore
+		}
+		scoreChanged := false
+
 		if command == "commitMatch" {
 			if web.arena.MatchState != field.PostMatch {
 				writeWebsocketError(ws, "Cannot commit score: Match is not over.")
@@ -135,6 +143,62 @@ func (web *Web) scoringPanelWebsocketHandler(w http.ResponseWriter, r *http.Requ
 				web.arena.BlueRealtimeScore.CurrentScore.Fouls =
 					append(web.arena.BlueRealtimeScore.CurrentScore.Fouls, foul)
 			}
+			web.arena.RealtimeScoreNotifier.Notify()
+		} else if command == "adjustCount" {
+			// general purpose command for adjusting the count for a specific gamepiece
+			// the game-specific logic is handled within Score.AdjustCount
+			args := struct {
+				Id    string
+				Phase string
+				Delta int
+			}{}
+			err = mapstructure.Decode(data, &args)
+			if err != nil {
+				writeWebsocketError(ws, err.Error())
+				continue
+			}
+			phase := game.PhaseTeleop
+			if args.Phase == "auto" {
+				phase = game.PhaseAuto
+			}
+			if score.AdjustCount(args.Id, phase, args.Delta) {
+				scoreChanged = true
+			}
+		} else if command == "setStatus" {
+			// general purpose command for adjusting the boolean status of a robot
+			// the game-specific logic is handled within Score.SetBoolStatus
+			args := struct {
+				Id         string
+				RobotIndex int
+				Value      bool
+			}{}
+			err = mapstructure.Decode(data, &args)
+			if err != nil {
+				writeWebsocketError(ws, err.Error())
+				continue
+			}
+			if score.SetBoolStatus(args.Id, args.RobotIndex, args.Value) {
+				scoreChanged = true
+			}
+		} else if command == "setEnumStatus" {
+			// Same as setStatus, but Value is replaced by ValueId (a game.yaml status value id,
+			// e.g. "full") for statuses declared with an enum `values` list.
+			args := struct {
+				Id         string
+				RobotIndex int
+				ValueId    string
+			}{}
+			err = mapstructure.Decode(data, &args)
+			if err != nil {
+				writeWebsocketError(ws, err.Error())
+				continue
+			}
+			if score.SetEnumStatus(args.Id, args.RobotIndex, args.ValueId) {
+				scoreChanged = true
+			}
+		}
+
+		if scoreChanged {
 			web.arena.RealtimeScoreNotifier.Notify()
 		}
 	}

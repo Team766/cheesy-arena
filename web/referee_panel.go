@@ -27,7 +27,7 @@ func (web *Web) refereePanelHandler(w http.ResponseWriter, r *http.Request) {
 
 	refereePanelTemplate := "templates/referee_panel.html"
 	if game.CustomGameMode {
-		refereePanelTemplate = "templates/referee_panel_generated.html"
+		refereePanelTemplate = "templates/generated_referee_panel.html"
 	}
 	template, err := web.parseFiles(refereePanelTemplate, "templates/base.html")
 	if err != nil {

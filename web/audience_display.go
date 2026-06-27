@@ -28,8 +28,8 @@ func (web *Web) audienceDisplayHandler(w http.ResponseWriter, r *http.Request) {
 	audienceDisplayTemplate := "templates/audience_display.html"
 	audienceDisplayTemplateName := "audience_display.html"
 	if game.CustomGameMode {
-		audienceDisplayTemplate = "templates/audience_display_generated.html"
-		audienceDisplayTemplateName = "audience_display_generated.html"
+		audienceDisplayTemplate = "templates/generated_audience_display.html"
+		audienceDisplayTemplateName = "generated_audience_display.html"
 	}
 	template, err := web.parseFiles(audienceDisplayTemplate)
 	if err != nil {

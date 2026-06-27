@@ -120,5 +120,144 @@ type Score struct {
 }
 `)
 
+	// Phase representation
+	sb.WriteString(`type Phase int
+
+const (
+	PhaseAuto Phase = iota
+	PhaseTeleop
+)
+
+`)
+
+	// Named methods for adjusting counts
+	for _, sc := range yamlData.ScoringCounts {
+		camel := toCamelCase(sc.ID)
+		if sc.Phase == "both" {
+			sb.WriteString(fmt.Sprintf(`func (s *Score) Adjust%sCount(phase Phase, delta int) bool {
+	if phase == PhaseAuto {
+		newVal := s.Auto%sCount + delta
+		if newVal < 0 { newVal = 0 }
+		if newVal == s.Auto%sCount { return false }
+		s.Auto%sCount = newVal
+		return true
+	} else {
+		newVal := s.Teleop%sCount + delta
+		if newVal < 0 { newVal = 0 }
+		if newVal == s.Teleop%sCount { return false }
+		s.Teleop%sCount = newVal
+		return true
+	}
+}
+
+`, camel, camel, camel, camel, camel, camel, camel))
+		} else if sc.Phase == "auto" {
+			sb.WriteString(fmt.Sprintf(`func (s *Score) Adjust%sCount(phase Phase, delta int) bool {
+	if phase == PhaseAuto {
+		newVal := s.Auto%sCount + delta
+		if newVal < 0 { newVal = 0 }
+		if newVal == s.Auto%sCount { return false }
+		s.Auto%sCount = newVal
+		return true
+	}
+	return false
+}
+
+`, camel, camel, camel, camel))
+		} else if sc.Phase == "teleop" {
+			sb.WriteString(fmt.Sprintf(`func (s *Score) Adjust%sCount(phase Phase, delta int) bool {
+	if phase == PhaseTeleop {
+		newVal := s.Teleop%sCount + delta
+		if newVal < 0 { newVal = 0 }
+		if newVal == s.Teleop%sCount { return false }
+		s.Teleop%sCount = newVal
+		return true
+	}
+	return false
+}
+
+`, camel, camel, camel, camel))
+		}
+	}
+
+	for _, ec := range yamlData.EndgameCounts {
+		camel := toCamelCase(ec.ID)
+		sb.WriteString(fmt.Sprintf(`func (s *Score) Adjust%sCount(delta int) bool {
+	newVal := s.Endgame%sCount + delta
+	if newVal < 0 { newVal = 0 }
+	if newVal == s.Endgame%sCount { return false }
+	s.Endgame%sCount = newVal
+	return true
+}
+
+`, camel, camel, camel, camel))
+	}
+
+	// Generic AdjustCount dispatcher
+	sb.WriteString(`func (s *Score) AdjustCount(id string, phase Phase, delta int) bool {
+	switch id {
+`)
+	for _, sc := range yamlData.ScoringCounts {
+		camel := toCamelCase(sc.ID)
+		sb.WriteString(fmt.Sprintf("\tcase %q:\n\t\treturn s.Adjust%sCount(phase, delta)\n", sc.ID, camel))
+	}
+	for _, ec := range yamlData.EndgameCounts {
+		camel := toCamelCase(ec.ID)
+		sb.WriteString(fmt.Sprintf("\tcase %q:\n\t\treturn s.Adjust%sCount(delta)\n", ec.ID, camel))
+	}
+	sb.WriteString("\t}\n\treturn false\n}\n\n")
+
+	// Named status adjusters
+	for _, status := range yamlData.Statuses {
+		camel := toCamelCase(status.ID)
+		if len(status.Values) >= 2 {
+			sb.WriteString(fmt.Sprintf(`func (s *Score) Set%sStatus(robotIndex int, value %sStatus) bool {
+	if robotIndex < 0 || robotIndex >= 3 { return false }
+	if s.%sStatuses[robotIndex] == value { return false }
+	s.%sStatuses[robotIndex] = value
+	return true
+}
+
+`, camel, camel, camel, camel))
+		} else {
+			sb.WriteString(fmt.Sprintf(`func (s *Score) Set%sStatus(robotIndex int, value bool) bool {
+	if robotIndex < 0 || robotIndex >= 3 { return false }
+	if s.%sStatuses[robotIndex] == value { return false }
+	s.%sStatuses[robotIndex] = value
+	return true
+}
+
+`, camel, camel, camel))
+		}
+	}
+
+	// Generic SetBoolStatus dispatcher
+	sb.WriteString(`func (s *Score) SetBoolStatus(id string, robotIndex int, value bool) bool {
+	switch id {
+`)
+	for _, status := range yamlData.Statuses {
+		if len(status.Values) < 2 {
+			camel := toCamelCase(status.ID)
+			sb.WriteString(fmt.Sprintf("\tcase %q:\n\t\treturn s.Set%sStatus(robotIndex, value)\n", status.ID, camel))
+		}
+	}
+	sb.WriteString("\t}\n\treturn false\n}\n\n")
+
+	// Generic SetEnumStatus dispatcher
+	sb.WriteString(`func (s *Score) SetEnumStatus(id string, robotIndex int, valueId string) bool {
+	switch id {
+`)
+	for _, status := range yamlData.Statuses {
+		if len(status.Values) >= 2 {
+			camel := toCamelCase(status.ID)
+			sb.WriteString(fmt.Sprintf("\tcase %q:\n\t\tswitch valueId {\n", status.ID))
+			for _, val := range status.Values {
+				sb.WriteString(fmt.Sprintf("\t\tcase %q:\n\t\t\treturn s.Set%sStatus(robotIndex, %s%s)\n", val.ID, camel, camel, toCamelCase(val.ID)))
+			}
+			sb.WriteString("\t\t}\n")
+		}
+	}
+	sb.WriteString("\t}\n\treturn false\n}\n\n")
+
 	return os.WriteFile(filePath, []byte(sb.String()), 0644)
 }

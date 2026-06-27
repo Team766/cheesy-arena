@@ -334,6 +334,16 @@ main {
   background-color: var(--alliance-highlight);
 }
 
+.status-toggle[data-selected="true"] {
+  background-color: var(--alliance-highlight);
+}
+
+.robot-status-row .team-num,
+.status-control .team-num {
+  color: var(--text-active);
+  font-weight: bold;
+}
+
 #fouls-button {
   flex: 1 1 0%;
   border-radius: var(--button-border-radius);

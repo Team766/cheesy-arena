@@ -28,8 +28,8 @@ func TestAudienceDisplay(t *testing.T) {
 	)
 	assert.Equal(t, 200, recorder.Code)
 	if game.CustomGameMode {
-		assert.Contains(t, recorder.Body.String(), "Custom Audience Display")
-		assert.NotContains(t, recorder.Body.String(), "finalTiebreakReason")
+		assert.Contains(t, recorder.Body.String(), "Audience Display - ")
+		assert.Contains(t, recorder.Body.String(), "finalTiebreakReason")
 	} else {
 		assert.Contains(t, recorder.Body.String(), "Audience Display - Untitled Event - Cheesy Arena")
 		assert.Contains(t, recorder.Body.String(), "finalTiebreakReason")
