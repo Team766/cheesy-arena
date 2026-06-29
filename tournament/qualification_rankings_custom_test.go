@@ -1,5 +1,3 @@
-// Copyright 2017 Team 254. All Rights Reserved.
-// Author: pat@patfairbank.com (Patrick Fairbank)
 //go:build custom
 
 package tournament
@@ -50,14 +48,15 @@ func TestCalculateRankingsCustom(t *testing.T) {
 		},
 	}
 	// Give Red some points
-	matchResult.RedScore.AutoGp1Level1Count = 1 // 5 points
+	matchResult.RedScore.AutoStructure1Level1Count = 3 // 9 points, and qualifies for AutonRP (> 2 pieces on Structure 1)
 	database.CreateMatchResult(matchResult)
 
 	updatedRankings, err := CalculateRankings(database, false)
 	assert.Nil(t, err)
 	assert.Len(t, updatedRankings, 6)
 
-	// The 3 red teams (1, 3, 5) should have 3 RP for the win plus 1 bonus RP for the AutonRP (AutoGp1Level1Count >= 1).
+	// The 3 red teams (1, 3, 5) should have 3 RP for the win plus 1 bonus RP for the AutonRP
+	// (AutoStructure1Level1Count + AutoStructure1Level2Count > 2).
 	for i := 0; i < 3; i++ {
 		assert.Contains(t, []int{1, 3, 5}, updatedRankings[i].TeamId)
 		assert.Equal(t, i+1, updatedRankings[i].Rank)

@@ -1,3 +1,8 @@
+// Run via `go generate ./...` from the repo root, which also picks up the unrelated stringer
+// directives in plc/plc.go and model/match.go. The directive below runs with this directory
+// (cmd/generate/) as its working directory, hence the ../../ prefix on the default custom_game.yaml path.
+//
+//go:generate go run . -f ../../game/custom_game.yaml -out ../..
 package main
 
 import (
@@ -12,80 +17,112 @@ import (
 
 var goIdentRegexp = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
+var validElementPhases = map[string]bool{"auto": true, "teleop": true, "endgame": true}
+var validStatusPhases = map[string]bool{"auto": true, "endgame": true}
+
+// cleanPatterns lists every generated-file glob, matching the patterns in .gitignore.
+var cleanPatterns = []string{
+	"game/generated_*.go",
+	"templates/generated_*.html",
+	"static/js/generated_*.js",
+	"cmd/generate/generated_*_test.go",
+}
+
+// runClean removes every file matching cleanPatterns, run from the repo root.
+func runClean() error {
+	removed := 0
+	for _, pattern := range cleanPatterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			return err
+		}
+		for _, match := range matches {
+			if err := os.Remove(match); err != nil {
+				return err
+			}
+			fmt.Println("Removed", match)
+			removed++
+		}
+	}
+	if removed == 0 {
+		fmt.Println("Nothing to clean.")
+	}
+	return nil
+}
+
 func main() {
-	yamlPath := flag.String("f", "game/game.yaml", "path to game.yaml")
+	if len(os.Args) > 1 && os.Args[1] == "clean" {
+		if err := runClean(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error cleaning generated files: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	yamlPath := flag.String("f", "game/custom_game.yaml", "path to the game definition YAML to read")
+	// outRoot decouples the generated-file destinations from the input YAML's location: output always
+	// lands in the standard repo layout (out/game, out/templates, out/static/js, out/cmd/generate),
+	// so a config under game/examples/ generates into the same place game/custom_game.yaml would.
+	// Default "." works when run from the repo root; the go:generate directive passes "../.." since it
+	// runs in cmd/generate/.
+	outRoot := flag.String("out", ".", "repo root the generated files are written under")
 	flag.Parse()
 
 	data, err := os.ReadFile(*yamlPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading game.yaml: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error reading custom_game.yaml: %v\n", err)
 		os.Exit(1)
 	}
 
 	var yamlData GameYAML
 	if err := yaml.Unmarshal(data, &yamlData); err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing game.yaml: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error parsing custom_game.yaml: %v\n", err)
 		os.Exit(1)
-	}
-
-	// Normalize points
-	for i := range yamlData.ScoringCounts {
-		sc := &yamlData.ScoringCounts[i]
-		if sc.Phase == "auto" && sc.Points > 0 && sc.PointsAuto == 0 {
-			sc.PointsAuto = sc.Points
-		}
-		if sc.Phase == "teleop" && sc.Points > 0 && sc.PointsTeleop == 0 {
-			sc.PointsTeleop = sc.Points
-		}
 	}
 
 	// Validation
 	validationErrors := validateGameYAML(&yamlData)
 
 	if len(validationErrors) > 0 {
-		fmt.Fprintln(os.Stderr, "Validation errors in game.yaml:")
+		fmt.Fprintln(os.Stderr, "Validation errors in custom_game.yaml:")
 		for _, errStr := range validationErrors {
 			fmt.Fprintf(os.Stderr, "  - %s\n", errStr)
 		}
 		os.Exit(1)
 	}
 
-	// Codegen target dir
-	destDir := filepath.Dir(*yamlPath) // e.g. "game" if yamlPath is "game/game.yaml"
+	// Codegen target dirs — always the standard repo layout under outRoot, independent of where the
+	// input YAML lives.
+	gameDir := filepath.Join(*outRoot, "game")
 
-	if err := generateConstants(&yamlData, destDir); err != nil {
+	if err := generateConstants(&yamlData, gameDir); err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating constants: %v\n", err)
 		os.Exit(1)
 	}
 
-	if err := generateScore(&yamlData, destDir); err != nil {
+	if err := generateScore(&yamlData, gameDir); err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating Score struct: %v\n", err)
 		os.Exit(1)
 	}
 
-	if err := generateScoreSummary(&yamlData, destDir); err != nil {
+	if err := generateScoreSummary(&yamlData, gameDir); err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating ScoreSummary: %v\n", err)
 		os.Exit(1)
 	}
 
-	if err := generateRankingFields(&yamlData, destDir); err != nil {
+	if err := generateRankingFields(&yamlData, gameDir); err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating RankingFields: %v\n", err)
 		os.Exit(1)
 	}
 
-	if err := generateScoreTest(&yamlData, destDir); err != nil {
+	if err := generateScoreTest(&yamlData, gameDir); err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating score test: %v\n", err)
 		os.Exit(1)
 	}
 
-	if err := appendRPStubs(&yamlData, destDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Error appending RP stubs: %v\n", err)
-		os.Exit(1)
-	}
-
-	templatesDir := filepath.Join(destDir, "../templates")
-	staticJsDir := filepath.Join(destDir, "../static/js")
-	cmdGenerateDir := filepath.Join(destDir, "../cmd/generate")
+	templatesDir := filepath.Join(*outRoot, "templates")
+	staticJsDir := filepath.Join(*outRoot, "static/js")
+	cmdGenerateDir := filepath.Join(*outRoot, "cmd/generate")
 
 	if err := generateScoringPanelTemplate(&yamlData, templatesDir); err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating scoring panel template: %v\n", err)
@@ -172,6 +209,19 @@ func validateGameYAML(yamlData *GameYAML) []string {
 		}
 	}
 
+	// Display groups
+	displayGroups := make(map[string]bool)
+	for i, dg := range yamlData.DisplayGroups {
+		if dg.ID == "" {
+			validationErrors = append(validationErrors, fmt.Sprintf("display_groups[%d]: id is required", i))
+		} else if !goIdentRegexp.MatchString(dg.ID) {
+			validationErrors = append(validationErrors, fmt.Sprintf("display_groups[%d]: id '%s' must be a valid Go identifier (letters, digits, underscores; cannot start with a digit)", i, dg.ID))
+		} else {
+			checkDup(dg.ID, "display_groups")
+			displayGroups[dg.ID] = true
+		}
+	}
+
 	// scoring_counts
 	for i, sc := range yamlData.ScoringCounts {
 		if sc.ID == "" {
@@ -184,39 +234,32 @@ func validateGameYAML(yamlData *GameYAML) []string {
 		}
 		checkDup(sc.ID, "scoring_counts")
 
-		if sc.GamePiece != "" && !gamePieces[sc.GamePiece] {
+		if sc.GamePiece == "" {
+			validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: game_piece is required", i, sc.ID))
+		} else if !gamePieces[sc.GamePiece] {
 			validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: unknown game_piece '%s'", i, sc.ID, sc.GamePiece))
 		}
-
-		if sc.Phase != "auto" && sc.Phase != "teleop" && sc.Phase != "both" {
-			validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: unknown phase '%s'", i, sc.ID, sc.Phase))
-		} else {
-			if sc.Phase == "both" && (sc.PointsAuto <= 0 || sc.PointsTeleop <= 0) {
-				validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: phase 'both' requires points_auto and points_teleop", i, sc.ID))
-			}
-			if sc.Phase == "auto" && sc.PointsAuto <= 0 && sc.Points <= 0 {
-				validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: phase 'auto' requires points or points_auto", i, sc.ID))
-			}
-			if sc.Phase == "teleop" && sc.PointsTeleop <= 0 && sc.Points <= 0 {
-				validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: phase 'teleop' requires points or points_teleop", i, sc.ID))
-			}
+		if sc.DisplayGroup != "" && !displayGroups[sc.DisplayGroup] {
+			validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: unknown display_group '%s'", i, sc.ID, sc.DisplayGroup))
 		}
-	}
 
-	// endgame_counts
-	for i, ec := range yamlData.EndgameCounts {
-		if ec.ID == "" {
-			validationErrors = append(validationErrors, fmt.Sprintf("endgame_counts[%d]: id is required", i))
+		if len(sc.Phases) == 0 {
+			validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: at least one phase is required", i, sc.ID))
 			continue
 		}
-		if !goIdentRegexp.MatchString(ec.ID) {
-			validationErrors = append(validationErrors, fmt.Sprintf("endgame_counts[%d]: id '%s' must be a valid Go identifier (letters, digits, underscores; cannot start with a digit)", i, ec.ID))
-			continue
-		}
-		checkDup(ec.ID, "endgame_counts")
-
-		if ec.Points <= 0 && ec.PointsAuto <= 0 && ec.PointsTeleop <= 0 {
-			validationErrors = append(validationErrors, fmt.Sprintf("endgame_counts[%d].%s: points must be > 0", i, ec.ID))
+		seenPhases := make(map[string]bool)
+		for j, ep := range sc.Phases {
+			if !validElementPhases[ep.Phase] {
+				validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s.phases[%d]: unknown phase '%s'", i, sc.ID, j, ep.Phase))
+				continue
+			}
+			if seenPhases[ep.Phase] {
+				validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: duplicate phase '%s'", i, sc.ID, ep.Phase))
+			}
+			seenPhases[ep.Phase] = true
+			if ep.Points <= 0 {
+				validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s.phases[%d]: points must be > 0", i, sc.ID, j))
+			}
 		}
 	}
 
@@ -232,8 +275,10 @@ func validateGameYAML(yamlData *GameYAML) []string {
 		}
 		checkDup(status.ID, "statuses")
 
-		if status.Phase != "auto" && status.Phase != "endgame" {
-			validationErrors = append(validationErrors, fmt.Sprintf("statuses[%d].%s: unknown phase '%s'", i, status.ID, status.Phase))
+		if len(status.Phases) != 1 {
+			validationErrors = append(validationErrors, fmt.Sprintf("statuses[%d].%s: exactly one phase is required (got %d)", i, status.ID, len(status.Phases)))
+		} else if !validStatusPhases[status.Phases[0].Phase] {
+			validationErrors = append(validationErrors, fmt.Sprintf("statuses[%d].%s.phases[0]: unknown phase '%s' (only auto and endgame are supported for statuses)", i, status.ID, status.Phases[0].Phase))
 		}
 
 		if len(status.Values) > 0 {
@@ -251,9 +296,9 @@ func validateGameYAML(yamlData *GameYAML) []string {
 					statusVals[val.ID] = true
 				}
 			}
-		} else {
-			if status.Points <= 0 {
-				validationErrors = append(validationErrors, fmt.Sprintf("statuses[%d].%s: points must be > 0 for bool status", i, status.ID))
+		} else if len(status.Phases) == 1 {
+			if status.Phases[0].Points <= 0 {
+				validationErrors = append(validationErrors, fmt.Sprintf("statuses[%d].%s: phases[0].points must be > 0 for bool status", i, status.ID))
 			}
 		}
 	}
@@ -262,6 +307,8 @@ func validateGameYAML(yamlData *GameYAML) []string {
 	for i, rp := range yamlData.RPs {
 		if rp.ID == "" {
 			validationErrors = append(validationErrors, fmt.Sprintf("ranking_points[%d]: id is required", i))
+		} else if !goIdentRegexp.MatchString(rp.ID) {
+			validationErrors = append(validationErrors, fmt.Sprintf("ranking_points[%d]: id '%s' must be a valid Go identifier (letters, digits, underscores; cannot start with a digit)", i, rp.ID))
 		} else {
 			checkDup(rp.ID, "ranking_points")
 		}
@@ -280,9 +327,6 @@ func validateGameYAML(yamlData *GameYAML) []string {
 	}
 	for _, sc := range yamlData.ScoringCounts {
 		validElements[sc.ID] = true
-	}
-	for _, ec := range yamlData.EndgameCounts {
-		validElements[ec.ID] = true
 	}
 	for _, status := range yamlData.Statuses {
 		validElements[status.ID] = true

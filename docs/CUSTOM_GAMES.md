@@ -1,273 +1,224 @@
 # Custom Game Mode
 
-## What it is
+## Overview
 
-Cheesy Arena normally implements one specific FRC game per season (the stock game logic lives in files like `game/frc_constants.go`, which has no build tag and is compiled by default). Custom game mode is an alternative compile target, gated behind the Go build tag `custom`, that lets a developer define a completely different competition game — typically for an off-season event, a custom/non-FRC competition, or a demo — by editing a single YAML file (`game/game.yaml`) and one small hand-written Go file (`game/custom_scoring_logic.go`), then running a code generator.
+Cheesy Arena normally implements one specific FRC game per season, hardcoded into the binary. Custom game mode is an alternative compile target (Go build tag `custom`) that drives the same arena/match-control system from a YAML config instead — scoring rules, the referee/scoring/audience UI, and rankings all come from `game/custom_game.yaml` rather than hand-written game logic.
 
-The generator (`cmd/generate`) reads `game/game.yaml` and writes out all the Go data structures (`Score`, `ScoreSummary`, `RankingFields`), the scoring logic for computing per-match point totals, and three generated front-end surfaces (scoring panel, referee panel, audience display) as HTML templates and JS. None of the generated files are checked into git — they're listed in `.gitignore` and are expected to be produced locally by running the generator before building with `-tags custom`.
+Use it for off-season events, custom or non-FRC competitions, demos, or any event running a game that isn't the current FRC season's.
 
-When the binary is built with `-tags custom`, `game.CustomGameMode` is `true` and the web handlers in `web/scoring_panel.go`, `web/referee_panel.go`, and `web/audience_display.go` switch to serving the generated templates instead of the stock ones. Building without the tag compiles the normal stock-game binary and ignores `game.yaml` entirely.
+## What's disabled in custom mode
 
-## Quick start
+Custom mode keeps the full arena/match-control system — timing, driver-station networking, the PLC, field monitor, alliance selection, playoff brackets, qualification scheduling, and reports all work exactly as in the stock build. What it turns off are the integrations that assume the *current FRC season's* game and event infrastructure:
 
-From a fresh clone, to stand up a custom game locally:
+- **The Blue Alliance (TBA)** — both publishing match results/rankings and downloading team data. The TBA client is compiled out entirely (`partner/tba_custom.go` is a no-op stub), and `TbaPublishingEnabled`/`TbaDownloadEnabled` are force-cleared.
+- **Nexus for FRC** — including Nexus AutoQueue. `NexusEnabled`/`NexusAutoQueueEnabled` are force-cleared.
+- **Bitfocus Companion / Stream Deck** — the `CompanionAddress` is force-cleared, disabling Companion-driven display switching.
+
+These are forced off whenever the settings form is saved under a custom build (`web/setup_settings.go`, gated on `game.CustomGameMode`), regardless of what the form submitted — the corresponding settings-page controls have no effect in a custom binary. There is no per-event toggle to re-enable them; they are unavailable by construction because a custom game has no FRC event key, no TBA event, and no season-specific Companion layout.
+
+## Quick Start
 
 ```bash
 # 1. Edit the game definition
-vim game/game.yaml
+vim game/custom_game.yaml
 
-# 2. Write the RP logic functions referenced by game.yaml (see below)
+# 2. Write the RP logic functions referenced by custom_game.yaml
 vim game/custom_scoring_logic.go
 
 # 3. Generate the Go structs, scoring logic, and UI surfaces
-go run ./cmd/generate -f game/game.yaml
+go generate ./...
 
-# 4. Build the custom-tagged binary
-go build -tags custom -o cheesy-arena-custom .
-
-# 5. Run it in dev mode (required outside a real field network — see below)
-./cheesy-arena-custom -dev
+# 4. Build and run
+go build -tags custom
+./cheesy-arena [-dev]
 ```
 
-Then open `http://localhost:8080` in a browser.
+Open `http://<host>:8080`. `-dev` is required when testing the FMS locally rather than on a machine with IP `10.0.100.5`.
 
-The generator defaults its `-f` flag to `game/game.yaml`, so `go run ./cmd/generate` with no flags works for the standard layout. Re-run step 3 any time `game/game.yaml` changes, then rebuild.
+Re-run `go generate ./...` any time `custom_game.yaml` changes, then rebuild.
 
-## `game.yaml` reference
+## How to define a custom game
 
-The authoritative schema is `cmd/generate/schema.go` (`GameYAML` and its nested types). The committed example at `game/game.yaml` is used as the illustration below.
+### Schema (`custom_game.yaml`)
 
-### `game` — top-level metadata
+The authoritative schema is `cmd/generate/schema.go`. Schema walkthrough, with examples from `game/examples/high_seas_havoc.yaml`:
 
+**`game`** — top-level metadata.
 ```yaml
 game:
-  name: "My Custom Game"
+  name: "High Seas Havoc"
 ```
 
-| Field | YAML key | Type | Purpose |
-|---|---|---|---|
-| `Name` | `name` | string | Display name of the game. Required by validation (`game.name is required` if empty). |
-
-### `fouls` — foul point values
-
+**`fouls`** — points awarded to the opponent per foul.
 ```yaml
 fouls:
-  minor_foul_points: 2
-  major_foul_points: 6
+  minor_foul_points: 5
+  major_foul_points: 10
 ```
 
-| Field | YAML key | Type | Purpose |
-|---|---|---|---|
-| `MinorFoulPoints` | `minor_foul_points` | int | Points awarded to the opponent per minor foul. Must be `> 0`. |
-| `MajorFoulPoints` | `major_foul_points` | int | Points awarded to the opponent per major foul. Must be `> 0`. |
-
-### `game_pieces` — piece catalog
-
+**`game_pieces`** — the game pieces being manipulated by alliance robots. Referenced by `scoring_counts`.
 ```yaml
 game_pieces:
-  - id: game_piece_1
-    display_name: "Game Piece 1"
-  - id: game_piece_2
-    display_name: "Game Piece 2"
+  - id: cannonball
+    display_name: "Cannonball"
 ```
 
-| Field | YAML key | Type | Purpose |
-|---|---|---|---|
-| `ID` | `id` | string | Must be a valid Go identifier, unique across `game_pieces`. Referenced by `scoring_counts[].game_piece`. |
-| `DisplayName` | `display_name` | string | Label shown in the UI. |
+**`display_groups`** — rollup buckets for live counts and final points shown in the audience display. If not set on a `scoring_counts` entry, the entry's `game_piece` is used as the rollup bucket instead.
+```yaml
+display_groups:
+  - id: ship
+    display_name: "Ship"
+  - id: lair
+    display_name: "Lair"
+```
 
-`game_pieces` exists purely to declare the pieces that `scoring_counts` entries can be tagged with for grouping — it does not itself generate scoring fields.
-
-### `scoring_counts` — auto/teleop counter elements
-
+**`scoring_counts`** — countable scoring actions. Each lists the phases it can be scored in, each with its own point value.
 ```yaml
 scoring_counts:
-  - id: gp1_level1
-    display_name: "Game Piece 1 (Level 1)"
-    game_piece: game_piece_1
-    phase: both
-    points_auto: 5
-    points_teleop: 3
+  - id: hull
+    display_name: "Hull"
+    game_piece: cannonball
+    display_group: ship
+    phases:
+      - phase: auto
+        points: 4
+      - phase: teleop
+        points: 2
 
-  - id: gp1_level2
-    display_name: "Game Piece 1 (Level 2)"
-    game_piece: game_piece_1
-    phase: both
-    points_auto: 3
-    points_teleop: 1
-
-  - id: gp2
-    display_name: "Game Piece 2"
-    game_piece: game_piece_2
-    phase: both
-    points_auto: 4
-    points_teleop: 2
+  - id: kraken_lair
+    display_name: "Kraken Lair"
+    game_piece: cannonball
+    display_group: lair
+    phases:
+      - phase: endgame
+        points: 10
 ```
+- `phase` is `auto`, `teleop`, or `endgame`. An entry can declare more than one if it's scorable in several, each with an independent count and point value.
+- Every `scoring_counts` entry should set `game_piece`. `display_group` is optional — set it when you want several entries (e.g. Hull and Deck) rolled into one audience-display total (e.g. "Ship") instead of shown separately.
+- `display_name` is shown on the scoring panel. The audience display shows the resolved `display_group`/`game_piece` label instead, not this one.
+- Scoring panel and referee panel never group — every entry always shows as its own raw count, organized by phase.
 
-| Field | YAML key | Type | Purpose |
-|---|---|---|---|
-| `ID` | `id` | string | Valid Go identifier, unique across `scoring_counts`. Becomes a counter field on `Score` (e.g. `AutoGp1Level1Count`, `TeleopGp1Level1Count`). |
-| `DisplayName` | `display_name` | string | Label shown in the UI. |
-| `GamePiece` | `game_piece` | string, optional | Must reference an `id` in `game_pieces` if set. Used **only** by the audience display to group elements by piece for the live ticker and final breakdown — the scoring panel and referee panel always operate per-element, never grouped. |
-| `Phase` | `phase` | `"auto"` \| `"teleop"` \| `"both"` | Which match phase(s) this element can be scored in. |
-| `Points` | `points` | int | Shorthand for single-phase point value (used with `phase: auto` or `phase: teleop`). |
-| `PointsAuto` | `points_auto` | int | Points per occurrence during auto. Required (with `points_teleop`) when `phase: both`. |
-| `PointsTeleop` | `points_teleop` | int | Points per occurrence during teleop. Required (with `points_auto`) when `phase: both`. |
-| `Group` | `group` | string, optional | UI grouping hint (not tied to `game_piece`). |
-
-Validation rules enforced by `cmd/generate/main.go`'s `validateGameYAML`: `phase` must be one of the three values; `phase: both` requires both `points_auto > 0` and `points_teleop > 0`; `phase: auto` requires `points` or `points_auto > 0`; `phase: teleop` requires `points` or `points_teleop > 0`. The generator also normalizes `points` into `points_auto`/`points_teleop` for single-phase entries before validating.
-
-### `endgame_counts` — endgame counter elements
-
-```yaml
-endgame_counts: []
-```
-
-Same `Element` struct as `scoring_counts`, but phase is implicitly endgame (not validated against the `auto`/`teleop`/`both` enum the way `scoring_counts` is). Each entry needs `points` (or `points_auto`/`points_teleop`) `> 0`. The committed example doesn't use this section.
-
-### `statuses` — per-robot status flags
-
+**`statuses`** — tracks a per-robot status for an auto or endgame achievement (3 robots per alliance).
 ```yaml
 statuses:
   - id: leave
     display_name: "Leave"
-    phase: auto
-    points: 3
+    phases:
+      - phase: auto
+        points: 4
 
   - id: park
     display_name: "Park"
-    phase: endgame
-    points: 2
+    phases:
+      - phase: endgame
+        points: 3
 ```
+A status's value can be a simple bool, or one of several named states:
+```yaml
+  - id: muster
+    display_name: "Muster"
+    phases:
+      - phase: auto
+    values:
+      - id: none
+        display_name: "None"
+        points: 0
+      - id: partial
+        display_name: "Partial"
+        points: 3
+      - id: full
+        display_name: "Full"
+        points: 6
+```
+- `values` (2 or more entries) tracks the status as one of several named states, each with its own point value.
+- Without `values`, the status is a simple true/false flag, and `points` is the value awarded when true.
+- `phases` currently takes exactly one entry, `auto` or `endgame` (no `teleop`).
 
-| Field | YAML key | Type | Purpose |
-|---|---|---|---|
-| `ID` | `id` | string | Valid Go identifier, unique across `statuses`. Becomes a `[3]bool` or `[3]{ID}Status` array field on `Score` (3 robots per alliance), e.g. `LeaveStatuses`, `ParkStatuses`. |
-| `DisplayName` | `display_name` | string | Label shown in the UI. |
-| `Phase` | `phase` | `"auto"` \| `"endgame"` | Only two phases are valid for statuses (no `"teleop"`/`"both"`). |
-| `Points` | `points` | int | Points awarded per robot when true. Required (`> 0`) for bool statuses (no `values`). Ignored if `values` is present. |
-| `Values` | `values` | list of `StatusValue`, optional | If omitted, the status is a simple bool (`[3]bool`). If present, it must have at least 2 entries and generates a typed enum (`[3]{ID}Status`) with one Go constant and point value per state. |
-
-`StatusValue` fields: `ID` (`id`, required, unique within the status), `DisplayName` (`display_name`), `Points` (`points`, per-state point value).
-
-### `ranking_points` — custom RP bonus conditions
-
+**`ranking_points`** — custom RP bonus conditions, backed by hand-written Go (see below).
 ```yaml
 ranking_points:
   - id: auton_rp
     display_name: "Auton Bonus"
     logic_func: "ComputeAutonRP"
-
-  - id: scoring_rp
-    display_name: "Scoring Bonus"
-    logic_func: "ComputeScoringRP"
-
-  - id: endgame_rp
-    display_name: "Endgame Bonus"
-    logic_func: "ComputeEndgameRP"
 ```
 
-| Field | YAML key | Type | Purpose |
-|---|---|---|---|
-| `ID` | `id` | string | Unique RP identifier. |
-| `DisplayName` | `display_name` | string | Label. |
-| `LogicFunc` | `logic_func` | string | Name of a Go function that must exist in `game/custom_scoring_logic.go`, matching `func(score Score, opponentScore Score) bool`. Must be a valid Go identifier. |
-
-The generator does not verify the function actually exists in `custom_scoring_logic.go` — it only checks that the name is a syntactically valid identifier. If you reference a function you haven't written, the build will fail with an "undefined" compiler error.
-
-### `ranking_tiebreakers` / `playoff_tiebreakers`
-
+**`ranking_tiebreakers`** / **`playoff_tiebreakers`** — metric cascades for sorting rankings and breaking playoff ties. Each entry is one `metric`: a built-in (`auto_points`, `teleop_points`, `endgame_points`, `total_points`) or any `scoring_counts`/`statuses` id. Opponent major-foul count is always the first playoff tiebreaker, implicitly.
 ```yaml
 ranking_tiebreakers:
   - metric: total_points
   - metric: auto_points
+  - metric: kraken_lair
 
 playoff_tiebreakers:
+  - metric: kraken_lair
+  - metric: deck
   - metric: auto_points
-  - metric: total_points
 ```
 
-Each entry is a single field, `Metric` (`metric`), which must be one of: the built-ins `auto_points`, `teleop_points`, `endgame_points`, `total_points`, or any `id` declared in `scoring_counts`, `endgame_counts`, or `statuses`.
+### Custom RP Scoring
 
-- `ranking_tiebreakers` generates fields on `RankingFields` and drives the `Less()` comparison used for qualification rankings, applied after ranking points and matches played.
-- `playoff_tiebreakers` drives the cascade of metrics checked in `DetermineMatchStatus()` to break ties in playoff matches. Opponent major foul count is always checked first, implicitly — don't list it in this section.
-
-## `custom_scoring_logic.go` — the one file you write by hand
-
-`game/custom_scoring_logic.go` is build-tagged `//go:build custom` and is the **only** file in this system that the generator never overwrites. Every `logic_func` referenced in `game.yaml`'s `ranking_points` section must have a matching function here, with this signature:
+`game/custom_scoring_logic.go` (`//go:build custom`) is the one generated-adjacent file you write by hand — the generator never overwrites it. Every `logic_func` named in `ranking_points` needs a matching function here:
 
 ```go
 func ComputeXRP(score Score, opponentScore Score) bool
 ```
 
-The current committed example:
-
+For the `high_seas_havoc.yaml` schema above, that would look like:
 ```go
-//go:build custom
-
-package game
-
 func ComputeAutonRP(score Score, opponentScore Score) bool {
-	return score.AutoGp1Level1Count >= 1
-}
-
-func ComputeScoringRP(score Score, opponentScore Score) bool {
-	return score.TeleopGp1Level2Count >= 1
+	return score.AutoHullCount+score.AutoDeckCount > 2
 }
 
 func ComputeEndgameRP(score Score, opponentScore Score) bool {
-	return score.ParkStatuses[0] || score.ParkStatuses[1] || score.ParkStatuses[2]
+	parked := 0
+	for _, p := range score.ParkStatuses {
+		if p {
+			parked++
+		}
+	}
+	return parked >= 2
 }
 ```
 
-The field names referenced (`AutoGp1Level1Count`, `TeleopGp1Level2Count`, `ParkStatuses`) come straight from the generated `Score` struct — run the generator first so the fields exist, then write logic against them. If you rename or remove a `scoring_counts`/`statuses` entry in `game.yaml`, you'll need to update this file by hand to match.
+Field names (`AutoHullCount`, `ParkStatuses`, etc.) are derived from each `scoring_counts`/`statuses` id — run the generator first so they exist. Renaming or removing an entry means updating this file by hand to match.
 
-## What gets generated and where
+### Custom Rules
 
-Run via `go run ./cmd/generate [-f path/to/game.yaml]`. The flag defaults to `game/game.yaml`. The generator validates the YAML (see field-level rules above) and exits with a list of errors on `stderr` if anything is invalid, otherwise it writes the following files (all gitignored, all regenerated from scratch each run — never hand-edit them):
+`game/custom_rules.go` (`//go:build custom`) defines the rule list shown in the referee panel's foul-assignment dropdown — also hand-written, never generated. It ships with a placeholder ruleset; replace the `rules` slice with your own:
 
-| File | Generator function | Contents |
-|---|---|---|
-| `game/generated_constants.go` | `generateConstants` | `CustomGameMode = true` constant and any enum constants for status `values`. |
-| `game/generated_score.go` | `generateScore` | The `Score` struct: counter fields per `scoring_counts`/`endgame_counts` entry per applicable phase, status array fields per `statuses` entry, and the score-computation logic (point totals per phase, RP evaluation calling into `custom_scoring_logic.go`). |
-| `game/generated_score_summary.go` | `generateScoreSummary` | The `ScoreSummary` struct used for breakdowns/totals. |
-| `game/generated_ranking_fields.go` | `generateRankingFields` | The `RankingFields` struct and `Less()` tiebreaker cascade driven by `ranking_tiebreakers`. |
-| `cmd/generate/generated_score_test.go` | `generateScoreTest` | Generated unit tests for the `Score` struct's computation logic. |
-| (appended into `game/generated_score.go`) | `appendRPStubs` | RP evaluation wiring that calls each `ranking_points[].logic_func`. |
-| `templates/generated_scoring_panel.html` | `generateScoringPanelTemplate` | Scoring panel markup: editable counters and status toggles per element, organized by phase. |
-| `static/js/generated_scoring_panel.js` | `generateScoringPanelJS` | Scoring panel websocket commands for incrementing counts / toggling statuses. |
-| `templates/generated_audience_display.html` | `generateAudienceDisplayTemplate` | Audience display markup: live ticker and final breakdown table, grouped by `game_piece`. |
-| `static/js/generated_audience_display.js` | `generateAudienceDisplayJS` | Audience display websocket client logic. |
-| `templates/generated_referee_panel.html` | `generateRefereePanelTemplate` | Referee panel markup: read-only, per-phase raw per-element counts (not grouped by piece, not point values) plus per-robot status badges and the (shared, unmodified) fouls/cards UI. |
-| `static/js/generated_referee_panel.js` | `generateRefereePanelJS` | Referee panel websocket client logic. |
-| `cmd/generate/generated_template_test.go` | `generateTemplateTest` | Template-rendering smoke tests. |
-
-**Important distinction (the thing that surprises reviewers): the audience display groups scoring elements by `game_piece` for spectator simplicity (e.g. all "Game Piece 1" levels summed into one row), but the referee panel and scoring panel never do this — they always show every `scoring_counts`/`endgame_counts` entry as its own raw count, organized by phase** (e.g. a referee panel row might read "2 / 0 / 0" for Auto, meaning 2× `gp1_level1`, 0× `gp1_level2`, 0× `gp2`, in declaration order). This was a deliberate correction during development: an early pass grouped the referee panel by piece too, but referees verify discrete field actions, not derived point totals or piece-level aggregates, so the panel was reworked to show raw per-element counts per phase instead.
-
-## Building and running
-
-```bash
-# Regenerate after any game.yaml change
-go run ./cmd/generate
-
-# Build the custom-tagged binary
-go build -tags custom -o cheesy-arena-custom .
-
-# Run — -dev is not optional for local/non-field use
-./cheesy-arena-custom -dev
+```go
+var rules = []*Rule{
+	{1, "G206", false, true, "Description of the rule..."},
+	// IsMajor, IsRankingPoint, ...
+}
 ```
 
-`-dev` matters because `network.DevMode` (default `false`) controls whether driver-station listeners bind to all local interfaces. Without it, the arena networking code expects to run on the actual competition field network, where the driver station only ever tries to connect to the hardcoded `network.ServerIpAddress` (`10.0.100.5`, set in `network/switch.go`). Outside that network, omitting `-dev` will cause the relevant listeners to fail to bind, and the process exits. Always pass `-dev` for local development, testing, or any off-field event setup that isn't using the standard FRC field network gear.
+Rule assignment in the referee panel is optional, so an unedited or empty ruleset doesn't block scoring.
 
-Once running, hit:
+### Custom UI Template and Game Assets
 
-- `/setup/teams` — register the teams for the event.
-- `/match_play` — match control / FMS operator view.
-- `/panels/scoring/red` and `/panels/scoring/blue` — generated scoring panels (one per alliance).
-- `/panels/referee` — generated referee panel.
-- `/displays/audience` — generated audience display (intended to be chroma-keyed/overlaid on a video feed).
+The scoring panel, referee panel, and audience display HTML/JS are produced by the generator from hand-edited **template sources** — `templates/custom_{scoring_panel,referee_panel,audience_display}.html.tmpl` and `static/js/custom_{scoring_panel,referee_panel,audience_display}.js.tmpl`. These are committed, hand-editable defaults that ship with a working layout, so for normal use there's nothing to touch. To customize a surface's markup or behavior, edit its `.tmpl` and re-run `go generate ./...`.
 
-## Known limitations
+Inside a `.tmpl`, `[[ ]]` marks generate-time directives; `{{ }}` is passed through untouched for the FMS server's own template engine to handle at request time. The data a template can reference (phases, counts, statuses, display groups, and their pre-resolved field names) is the `TemplateData` value defined in `cmd/generate/viewmodel.go` — read that struct for the available fields.
 
-- The referee panel's optional foul rule-assignment dropdown (in `templates/referee_panel_foul_list.html`, shared unmodified with the stock game) still lists FRC-specific rule numbers and descriptions sourced from `game.GetAllRules()`. `game.yaml` has no concept of rules yet, so custom games inherit the stock ruleset's labels in that dropdown even though the rest of the panel is fully custom-generated. Rule assignment is optional, so this doesn't block scoring, but expect it to look out of place.
-- `-tags custom` is not built or tested in CI today — only exercised locally via `go build -tags custom` and `go test -tags custom`. Don't assume a green CI run has validated the custom build; run it yourself after any change touching `cmd/generate`, `game/custom_scoring_logic.go`, or `game.yaml`.
+Styling is hand-editable: `static/css/scoring_panel.css`, `static/css/referee_panel.css`, and `static/css/audience_display.css` are plain, committed stylesheets shared between the stock and custom builds, not generated. Edit them directly to restyle any of the three surfaces.
+
+For branding, swap `static/img/game-logo.png` (small in-match badge) and `static/img/blinds-logo.png` (large final-score/idle badge) for your game's artwork. Both render as circular badges (`object-fit: cover`, `border-radius: 50%`) — crop source images tightly to a square bounding the circle to avoid visible margins.
+
+## Generated Files
+
+`go generate ./...` (or `go run ./cmd/generate`) reads `custom_game.yaml` (and, for the UI surfaces, the `custom_*.tmpl` template sources above) and writes these files — all gitignored, all regenerated from scratch on every run, never hand-edited:
+
+| File | Contents |
+|---|---|
+| `game/generated_constants.go` | `CustomGameMode = true`, enum constants for status `values` |
+| `game/generated_score.go` | `Score` struct (one counter per declared phase, status arrays), `Phase` enum, `Adjust*`/`Set*Status` methods |
+| `game/generated_score_summary.go` | `ScoreSummary`, point accumulation, `DetermineMatchStatus` tiebreak cascade |
+| `game/generated_ranking_fields.go` | `RankingFields`, `Less()` tiebreaker comparison |
+| `templates/generated_scoring_panel.html` + `static/js/generated_scoring_panel.js` | Scoring panel: counters and status toggles, organized by phase |
+| `templates/generated_audience_display.html` + `static/js/generated_audience_display.js` | Audience display: live ticker and final breakdown, grouped per the display-group resolution chain. The HTML loads the shared `audience_display.js` plus the generated companion, which defines only the custom `handleRealtimeScoreGenerated`/`handleScorePostedGenerated` handlers the shared file dispatches to. |
+| `templates/generated_referee_panel.html` + `static/js/generated_referee_panel.js` | Referee panel: raw per-element counts by phase, per-robot status badges |
+| `game/generated_score_test.go` | Tests for `Score`, `ScoreSummary` (point computation, tiebreak cascade), and `RankingFields` (ranking sort cascade) |
+| `cmd/generate/generated_template_test.go` | Tests that the rendered templates parse and contain the expected per-element markup |
+
+`go run ./cmd/generate clean` removes all of the above. The `custom_*.tmpl` template sources are committed and hand-edited, so they are *not* removed by `clean`.

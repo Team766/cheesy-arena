@@ -1,5 +1,3 @@
-// Copyright 2014 Team 254. All Rights Reserved.
-// Author: pat@patfairbank.com (Patrick Fairbank)
 //go:build custom
 
 package web
@@ -91,9 +89,11 @@ func TestAudienceDisplayWebsocket(t *testing.T) {
 	web.arena.SavedMatchResult = &model.MatchResult{
 		RedScore: &game.Score{},
 		BlueScore: &game.Score{
-			AutoGp1Level1Count:   1,                                       // 5 points
-			TeleopGp1Level2Count: 1,                                       // 1 point (total 6)
-			Fouls:                []game.Foul{{FoulId: 1, IsMajor: true}}, // Gives Red 6 points
+			AutoStructure1Level1Count:   1,                                       // 3 points
+			AutoStructure1Level2Count:   1,                                       // 5 points
+			TeleopStructure1Level1Count: 4,                                       // 4 points
+			TeleopStructure1Level2Count: 1,                                       // 3 points (total 15, ties Red)
+			Fouls:                       []game.Foul{{FoulId: 1, IsMajor: true}}, // Gives Red 15 points
 		},
 		RedCards:  map[string]string{},
 		BlueCards: map[string]string{},

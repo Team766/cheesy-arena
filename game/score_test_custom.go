@@ -1,5 +1,3 @@
-// Copyright 2026 Team 254. All Rights Reserved.
-// Author: pat@patfairbank.com (Patrick Fairbank)
 //go:build custom
 
 package game
@@ -11,20 +9,20 @@ import (
 
 func TestScoreEquals(t *testing.T) {
 	s1 := &Score{
-		AutoGp1Level1Count: 1,
-		Fouls:              []Foul{{FoulId: 1, IsMajor: true}},
+		AutoStructure1Level1Count: 1,
+		Fouls:                     []Foul{{FoulId: 1, IsMajor: true}},
 	}
 	s2 := &Score{
-		AutoGp1Level1Count: 1,
-		Fouls:              []Foul{{FoulId: 1, IsMajor: true}},
+		AutoStructure1Level1Count: 1,
+		Fouls:                     []Foul{{FoulId: 1, IsMajor: true}},
 	}
 	s3 := &Score{
-		AutoGp1Level1Count: 2,
-		Fouls:              []Foul{{FoulId: 1, IsMajor: true}},
+		AutoStructure1Level1Count: 2,
+		Fouls:                     []Foul{{FoulId: 1, IsMajor: true}},
 	}
 	s4 := &Score{
-		AutoGp1Level1Count: 1,
-		Fouls:              []Foul{{FoulId: 2, IsMajor: true}},
+		AutoStructure1Level1Count: 1,
+		Fouls:                     []Foul{{FoulId: 2, IsMajor: true}},
 	}
 
 	assert.True(t, s1.Equals(s2))
@@ -34,28 +32,28 @@ func TestScoreEquals(t *testing.T) {
 
 func TestScoreSummarizeAutoPortion(t *testing.T) {
 	score := &Score{
-		AutoGp1Level1Count:   1,                           // 5 pts auto
-		TeleopGp1Level1Count: 1,                           // 3 pts teleop
-		LeaveStatuses:        [3]bool{true, false, false}, // 3 pts auto
+		AutoStructure1Level1Count:   1,                           // 3 pts auto
+		TeleopStructure1Level1Count: 1,                           // 1 pt teleop
+		LeaveStatuses:               [3]bool{true, false, false}, // 3 pts auto
 	}
 	opponent := &Score{
-		Fouls: []Foul{{FoulId: 1, IsMajor: false}}, // 2 pts foul points to score
+		Fouls: []Foul{{FoulId: 1, IsMajor: false}}, // 5 pts foul points to score
 	}
 
 	summary := score.Summarize(opponent)
 
-	// Gp1Level1Points = 5 + 3 = 8
-	assert.Equal(t, 8, summary.Gp1Level1Points)
-	// AutoPoints = 5 (gp1_level1 auto) + 3 (leave) = 8
-	assert.Equal(t, 8, summary.AutoPoints)
-	// TeleopPoints = 3 (gp1_level1 teleop) = 3
-	assert.Equal(t, 3, summary.TeleopPoints)
-	// MatchPoints = 8 + 3 = 11
-	assert.Equal(t, 11, summary.MatchPoints)
-	// FoulPoints = 2 (minor foul points in game.yaml)
-	assert.Equal(t, 2, summary.FoulPoints)
-	// Score = 11 + 2 = 13
-	assert.Equal(t, 13, summary.Score)
+	// Structure1Level1Points = 3 + 1 = 4
+	assert.Equal(t, 4, summary.Structure1Level1Points)
+	// AutoPoints = 3 (structure1_level1 auto) + 3 (leave) = 6
+	assert.Equal(t, 6, summary.AutoPoints)
+	// TeleopPoints = 1 (structure1_level1 teleop) = 1
+	assert.Equal(t, 1, summary.TeleopPoints)
+	// MatchPoints = 6 + 1 = 7
+	assert.Equal(t, 7, summary.MatchPoints)
+	// FoulPoints = 5 (minor foul points in custom_game.yaml)
+	assert.Equal(t, 5, summary.FoulPoints)
+	// Score = 7 + 5 = 12
+	assert.Equal(t, 12, summary.Score)
 }
 
 func TestDetermineMatchStatusTiebreaker(t *testing.T) {

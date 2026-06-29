@@ -9,9 +9,8 @@ import (
 
 func TestValidateTemplates(t *testing.T) {
 	paths := []string{
-		"../../game/game.yaml",
-		"../../examples/mayhem_2025.yaml",
-		"../../examples/rebuilt_2026.yaml",
+		"../../game/custom_game.yaml",
+		"../../game/examples/high_seas_havoc.yaml",
 	}
 
 	for _, p := range paths {
@@ -64,28 +63,57 @@ func TestValidationErrors(t *testing.T) {
 			expectedError: "scoring_counts[0]: id is required",
 		},
 		{
-			name: "bad element phase",
+			name: "bad scoring count phase",
 			modify: func(y *GameYAML) {
-				y.ScoringCounts[0].Phase = "invalid_phase"
+				y.ScoringCounts[0].Phases[0].Phase = "invalid_phase"
 			},
 			expectedError: "unknown phase 'invalid_phase'",
 		},
 		{
-			name: "both phase missing points",
+			name: "scoring count with no phases",
 			modify: func(y *GameYAML) {
-				y.ScoringCounts[0].Phase = "both"
-				y.ScoringCounts[0].PointsAuto = 0
-				y.ScoringCounts[0].PointsTeleop = 0
+				y.ScoringCounts[0].Phases = nil
 			},
-			expectedError: "requires points_auto and points_teleop",
+			expectedError: "at least one phase is required",
+		},
+		{
+			name: "scoring count with duplicate phase",
+			modify: func(y *GameYAML) {
+				y.ScoringCounts[0].Phases = []ElementPhase{
+					{Phase: "auto", Points: 5},
+					{Phase: "auto", Points: 3},
+				}
+			},
+			expectedError: "duplicate phase 'auto'",
+		},
+		{
+			name: "scoring count phase with non-positive points",
+			modify: func(y *GameYAML) {
+				y.ScoringCounts[0].Phases = []ElementPhase{{Phase: "auto", Points: 0}}
+			},
+			expectedError: "points must be > 0",
+		},
+		{
+			name: "unknown display_group reference",
+			modify: func(y *GameYAML) {
+				y.ScoringCounts[0].DisplayGroup = "nonexistent"
+			},
+			expectedError: "unknown display_group 'nonexistent'",
+		},
+		{
+			name: "missing game_piece rejected",
+			modify: func(y *GameYAML) {
+				y.ScoringCounts[0].GamePiece = ""
+			},
+			expectedError: "game_piece is required",
 		},
 		{
 			name: "enum status with too few values",
 			modify: func(y *GameYAML) {
 				y.Statuses = []Status{
 					{
-						ID:    "bad_status",
-						Phase: "auto",
+						ID:     "bad_status",
+						Phases: []ElementPhase{{Phase: "auto"}},
 						Values: []StatusValue{
 							{ID: "one", DisplayName: "One"},
 						},
@@ -93,6 +121,20 @@ func TestValidationErrors(t *testing.T) {
 				}
 			},
 			expectedError: "enum status requires at least 2 values",
+		},
+		{
+			name: "status with teleop phase rejected",
+			modify: func(y *GameYAML) {
+				y.Statuses[0].Phases = []ElementPhase{{Phase: "teleop", Points: 3}}
+			},
+			expectedError: "only auto and endgame are supported for statuses",
+		},
+		{
+			name: "status with more than one phase rejected",
+			modify: func(y *GameYAML) {
+				y.Statuses[0].Phases = []ElementPhase{{Phase: "auto", Points: 3}, {Phase: "endgame", Points: 3}}
+			},
+			expectedError: "exactly one phase is required",
 		},
 		{
 			name: "unknown tiebreaker metric",
@@ -105,7 +147,7 @@ func TestValidationErrors(t *testing.T) {
 			name: "duplicate id across sections",
 			modify: func(y *GameYAML) {
 				// Duplicate leave in scoring counts
-				y.ScoringCounts = append(y.ScoringCounts, Element{ID: "leave", Phase: "auto", Points: 5})
+				y.ScoringCounts = append(y.ScoringCounts, ScoringCount{ID: "leave", GamePiece: y.GamePieces[0].ID, Phases: []ElementPhase{{Phase: "auto", Points: 5}}})
 			},
 			expectedError: "duplicate id: 'leave'",
 		},
@@ -114,7 +156,7 @@ func TestValidationErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Start with a clean copy of default template
-			data, err := os.ReadFile("../../game/game.yaml")
+			data, err := os.ReadFile("../../game/custom_game.yaml")
 			assert.Nil(t, err)
 
 			var yamlData GameYAML

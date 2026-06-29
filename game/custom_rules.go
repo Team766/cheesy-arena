@@ -1,5 +1,3 @@
-// Copyright 2020 Team 254. All Rights Reserved.
-// Author: pat@patfairbank.com (Patrick Fairbank)
 //go:build custom
 
 package game

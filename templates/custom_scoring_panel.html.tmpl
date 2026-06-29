@@ -1,0 +1,82 @@
+{{define "title"}}Custom Scoring Panel{{end}}
+{{define "head"}}
+<link rel="manifest" href="/static/manifest/{{.PositionName}}_scoring.manifest">
+<meta name="viewport" content="width=device-width, user-scalable=no">
+<link href="/static/css/scoring_panel.css" rel="stylesheet">
+{{end}}
+{{define "body"}}
+<header id="banner">
+  <div class="screen-title">{{.Position.Title}} - <span id="matchName">&nbsp;</span></div>
+</header>
+<main>
+  <div id="tower-controls" style="display: flex; flex-direction: column; gap: 20px; width: 100%; flex: none; height: auto;">
+[[range .Phases]]    <section class="tower-section" id="[[.Name]]-section" style="flex: none; height: auto;">
+      <h1>[[.Title]]</h1>
+      <div style="display: flex; flex-direction: column; gap: 15px; width: 100%;">
+[[range .Counts]]        <div class="count-control" id="[[.ID]]-[[.Phase]]" style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">
+          <span class="count-label" style="font-size: 1.2rem; font-weight: bold;">[[.DisplayName]]</span>
+          <div style="display: flex; align-items: center; gap: 15px;">
+            <button class="scoring-button" onclick="adjustCount('[[.ID]]', '[[.Phase]]', -1);" ontouchstart disabled style="font-size: 1.5rem; width: 50px; height: 50px;">-</button>
+            <span class="count-value" id="[[.ID]]-[[.Phase]]-count" style="font-size: 1.5rem; min-width: 30px; text-align: center;">0</span>
+            <button class="scoring-button" onclick="adjustCount('[[.ID]]', '[[.Phase]]', 1);" ontouchstart disabled style="font-size: 1.5rem; width: 50px; height: 50px;">+</button>
+          </div>
+        </div>
+[[end]][[range .Statuses]][[if .IsBool]]        <div class="status-control" id="[[.ID]]-status" style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">
+          <span class="status-label" style="font-size: 1.2rem; font-weight: bold;">[[.DisplayName]]</span>
+          <div style="display: flex; gap: 8px;">
+            {{range $i := seq 3}}
+            <div class="team-{{$i}}" style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <span class="team-num" style="font-size: 0.85rem; font-weight: bold;"></span>
+              <button class="scoring-button status-toggle" id="[[.ID]]-{{add $i -1}}" onclick="toggleBoolStatus('[[.ID]]', {{add $i -1}});" ontouchstart disabled style="width: 60px; height: 45px;"></button>
+            </div>
+            {{end}}
+          </div>
+        </div>
+[[else]]        <div class="status-control" id="[[.ID]]-status" style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">
+          <span class="status-label" style="font-size: 1.2rem; font-weight: bold;">[[.DisplayName]]</span>
+          <div style="display: flex; gap: 8px;">
+            {{range $i := seq 3}}
+            <div class="team-{{$i}}" style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <span class="team-num" style="font-size: 0.85rem; font-weight: bold;"></span>
+              <button class="scoring-button status-toggle" id="[[.ID]]-{{add $i -1}}" onclick="cycleEnumStatus('[[.ID]]', {{add $i -1}});" ontouchstart disabled style="width: 80px; height: 45px;">[[(index .Values 0).DisplayName]]</button>
+            </div>
+            {{end}}
+          </div>
+        </div>
+[[end]][[end]]      </div>
+    </section>
+[[end]]  </div>
+  <div id="panel-actions">
+    <button id="commit" onclick="commitMatchScore();" ontouchstart disabled>Commit</button>
+    <button id="fouls-button" class="scoring-button" onclick="showFoulsDialog();" ontouchstart disabled>Fouls</button>
+  </div>
+</main>
+
+<dialog id="fouls-dialog" onclick="closeFoulsDialogIfOutside(event);">
+  <div class="dialog-container">
+    <div class="dialog-banner">Add Fouls</div>
+    <div id="foul-container">
+      {{template "foulButton" (dict "id" "foul-blue-minor" "color" "blue" "label" "Blue" "isMajor" false)}}
+      {{template "foulButton" (dict "id" "foul-red-minor" "color" "red" "label" "Red" "isMajor" false)}}
+      {{template "foulButton" (dict "id" "foul-blue-major" "color" "blue" "label" "Blue Major" "isMajor" true)}}
+      {{template "foulButton" (dict "id" "foul-red-major" "color" "red" "label" "Red Major" "isMajor" true)}}
+    </div>
+    <button class="dialog-close" autofocus onclick="closeFoulsDialog();" ontouchstart>Close</button>
+  </div>
+</dialog>
+{{end}}
+
+{{define "script"}}
+<script src="/static/js/match_timing.js"></script>
+<script src="/static/js/scoring_panel.js"></script>
+<script src="/static/js/generated_scoring_panel.js"></script>
+{{end}}
+
+{{define "foulButton"}}
+<button id="{{.id}}" class="foul-button {{.color}} scoring-button" ontouchstart onclick="addFoul('{{.color}}', {{.isMajor}});">
+  <div class="foul-button-label">{{.label}}</div>
+  <div class="foul-button-counters">
+    <span class="fouls-local">0</span> / <span class="fouls-global">0</span>
+  </div>
+</button>
+{{end}}

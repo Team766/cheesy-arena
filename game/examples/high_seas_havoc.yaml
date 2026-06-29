@@ -1,0 +1,100 @@
+game:
+  name: "High Seas Havoc"
+
+fouls:
+  minor_foul_points: 5
+  major_foul_points: 10
+
+game_pieces:
+  - id: cannonball
+    display_name: "Cannonball"
+
+# display_groups: matches the real audience display from ~/Code/mayhem-fms-2025 (the FMS
+# implementation for this game), which combines Hull+Deck into one "Ship" total and reports
+# Kraken Lair separately as "Lair" — a structure-level rollup, distinct from game_piece (there's
+# only one piece, the cannonball, scored on three structures).
+display_groups:
+  - id: ship
+    display_name: "Ship"
+  - id: lair
+    display_name: "Lair"
+
+scoring_counts:
+  - id: hull
+    display_name: "Hull"
+    game_piece: cannonball
+    display_group: ship
+    phases:
+      - phase: auto
+        points: 4
+      - phase: teleop
+        points: 2
+
+  - id: deck
+    display_name: "Deck"
+    game_piece: cannonball
+    display_group: ship
+    phases:
+      - phase: auto
+        points: 10
+      - phase: teleop
+        points: 5
+
+  - id: kraken_lair
+    display_name: "Kraken Lair"
+    game_piece: cannonball
+    display_group: lair
+    phases:
+      - phase: endgame
+        points: 10
+
+statuses:
+  - id: leave
+    display_name: "Leave"
+    phases:
+      - phase: auto
+        points: 4
+
+  - id: muster
+    display_name: "Muster"
+    phases:
+      - phase: auto
+    values:
+      - id: none
+        display_name: "None"
+        points: 0
+      - id: partial
+        display_name: "Partial"
+        points: 3
+      - id: full
+        display_name: "Full"
+        points: 6
+
+  - id: park
+    display_name: "Park"
+    phases:
+      - phase: endgame
+        points: 3
+
+ranking_points:
+  - id: auton_rp
+    display_name: "Auton Bonus"
+    logic_func: "ComputeAutonRP"
+
+  - id: scoring_rp
+    display_name: "Scoring Bonus"
+    logic_func: "ComputeScoringRP"
+
+  - id: endgame_rp
+    display_name: "Endgame Bonus"
+    logic_func: "ComputeEndgameRP"
+
+ranking_tiebreakers:
+  - metric: total_points
+  - metric: auto_points
+  - metric: kraken_lair
+
+playoff_tiebreakers:
+  - metric: kraken_lair
+  - metric: deck
+  - metric: auto_points

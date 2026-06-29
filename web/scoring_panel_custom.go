@@ -157,9 +157,14 @@ func (web *Web) scoringPanelWebsocketHandler(w http.ResponseWriter, r *http.Requ
 				writeWebsocketError(ws, err.Error())
 				continue
 			}
-			phase := game.PhaseTeleop
-			if args.Phase == "auto" {
+			var phase game.Phase
+			switch args.Phase {
+			case "auto":
 				phase = game.PhaseAuto
+			case "endgame":
+				phase = game.PhaseEndgame
+			default:
+				phase = game.PhaseTeleop
 			}
 			if score.AdjustCount(args.Id, phase, args.Delta) {
 				scoreChanged = true
@@ -181,7 +186,7 @@ func (web *Web) scoringPanelWebsocketHandler(w http.ResponseWriter, r *http.Requ
 				scoreChanged = true
 			}
 		} else if command == "setEnumStatus" {
-			// Same as setStatus, but Value is replaced by ValueId (a game.yaml status value id,
+			// Same as setStatus, but Value is replaced by ValueId (a custom_game.yaml status value id,
 			// e.g. "full") for statuses declared with an enum `values` list.
 			args := struct {
 				Id         string
@@ -194,6 +199,21 @@ func (web *Web) scoringPanelWebsocketHandler(w http.ResponseWriter, r *http.Requ
 				continue
 			}
 			if score.SetEnumStatus(args.Id, args.RobotIndex, args.ValueId) {
+				scoreChanged = true
+			}
+		} else if command == "cycleEnumStatus" {
+			// Advances an enum status to its next value, wrapping around — the scoring panel UI
+			// uses one button per robot for enum statuses, cycling through values on each click.
+			args := struct {
+				Id         string
+				RobotIndex int
+			}{}
+			err = mapstructure.Decode(data, &args)
+			if err != nil {
+				writeWebsocketError(ws, err.Error())
+				continue
+			}
+			if score.CycleEnumStatus(args.Id, args.RobotIndex) {
 				scoreChanged = true
 			}
 		}

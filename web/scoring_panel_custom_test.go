@@ -1,5 +1,3 @@
-// Copyright 2014 Team 254. All Rights Reserved.
-// Author: pat@patfairbank.com (Patrick Fairbank)
 //go:build custom
 
 package web
@@ -62,22 +60,22 @@ func TestScoringPanelWebsocketCustom(t *testing.T) {
 		Phase string
 		Delta int
 	}{}
-	assert.Equal(t, 0, web.arena.RedRealtimeScore.CurrentScore.AutoGp1Level1Count)
-	assert.Equal(t, 0, web.arena.RedRealtimeScore.CurrentScore.TeleopGp1Level1Count)
-	assert.Equal(t, 0, web.arena.BlueRealtimeScore.CurrentScore.AutoGp1Level1Count)
-	assert.Equal(t, 0, web.arena.BlueRealtimeScore.CurrentScore.TeleopGp1Level1Count)
+	assert.Equal(t, 0, web.arena.RedRealtimeScore.CurrentScore.AutoStructure1Level1Count)
+	assert.Equal(t, 0, web.arena.RedRealtimeScore.CurrentScore.TeleopStructure1Level1Count)
+	assert.Equal(t, 0, web.arena.BlueRealtimeScore.CurrentScore.AutoStructure1Level1Count)
+	assert.Equal(t, 0, web.arena.BlueRealtimeScore.CurrentScore.TeleopStructure1Level1Count)
 
-	adjustData.Id = "gp1_level1"
+	adjustData.Id = "structure1_level1"
 	adjustData.Phase = "auto"
 	adjustData.Delta = 2
 	redWs.Write("adjustCount", adjustData)
 
-	adjustData.Id = "gp1_level1"
+	adjustData.Id = "structure1_level1"
 	adjustData.Phase = "teleop"
 	adjustData.Delta = 3
 	blueWs.Write("adjustCount", adjustData)
 
-	adjustData.Id = "gp2"
+	adjustData.Id = "structure2_level1"
 	adjustData.Phase = "teleop"
 	adjustData.Delta = 1
 	redWs.Write("adjustCount", adjustData)
@@ -87,9 +85,9 @@ func TestScoringPanelWebsocketCustom(t *testing.T) {
 		readWebsocketType(t, blueWs, "realtimeScore")
 	}
 
-	assert.Equal(t, 2, web.arena.RedRealtimeScore.CurrentScore.AutoGp1Level1Count)
-	assert.Equal(t, 3, web.arena.BlueRealtimeScore.CurrentScore.TeleopGp1Level1Count)
-	assert.Equal(t, 1, web.arena.RedRealtimeScore.CurrentScore.TeleopGp2Count)
+	assert.Equal(t, 2, web.arena.RedRealtimeScore.CurrentScore.AutoStructure1Level1Count)
+	assert.Equal(t, 3, web.arena.BlueRealtimeScore.CurrentScore.TeleopStructure1Level1Count)
+	assert.Equal(t, 1, web.arena.RedRealtimeScore.CurrentScore.TeleopStructure2Level1Count)
 
 	// Send status commands.
 	statusData := struct {
