@@ -5,17 +5,17 @@
 
 package game
 
-[[range .Statuses]][[if not .IsBool]][[$st := .]]type [[$st.EnumType]] int
+[[range .Statuses]][[if not .IsBool]][[$st := .]]type [[camel $st.ID]]Status int
 
 const (
-[[range $i, $v := $st.Values]]	[[$v.ConstName]][[if not $i]] [[$st.EnumType]] = iota[[end]]
+[[range $i, $v := $st.Values]]	[[camel $st.ID]][[camel $v.ID]][[if not $i]] [[camel $st.ID]]Status = iota[[end]]
 [[end]])
 
 [[end]][[end]]// Score holds the instantaneous scoring state for one alliance.
 type Score struct {
-[[range .ScoringCounts]][[range .Phases]]	[[.FieldName]] int
+[[range .ScoringCounts]][[$el := .]][[range .Phases]]	[[phasePrefix .Phase]][[camel $el.ID]]Count int
 [[end]][[end]]
-[[range .Statuses]]	[[.StatusesField]] [3][[.GoElemType]]
+[[range .Statuses]]	[[camel .ID]]Statuses [3][[if .IsBool]]bool[[else]][[camel .ID]]Status[[end]]
 [[end]]
 	Fouls     []Foul
 	PlayoffDq bool
@@ -28,8 +28,8 @@ type Score struct {
 }
 
 func (score *Score) Equals(other *Score) bool {
-	if [[range .ScoringCounts]][[range .Phases]]score.[[.FieldName]] != other.[[.FieldName]] ||
-		[[end]][[end]][[range .Statuses]]score.[[.StatusesField]] != other.[[.StatusesField]] ||
+	if [[range .ScoringCounts]][[$el := .]][[range .Phases]]score.[[phasePrefix .Phase]][[camel $el.ID]]Count != other.[[phasePrefix .Phase]][[camel $el.ID]]Count ||
+		[[end]][[end]][[range .Statuses]]score.[[camel .ID]]Statuses != other.[[camel .ID]]Statuses ||
 		[[end]]score.PlayoffDq != other.PlayoffDq ||
 		len(score.Fouls) != len(other.Fouls) {
 		return false
@@ -50,17 +50,17 @@ const (
 	PhaseEndgame
 )
 
-[[range .ScoringCounts]]func (s *Score) Adjust[[.CamelID]]Count(phase Phase, delta int) bool {
+[[range .ScoringCounts]][[$el := .]]func (s *Score) Adjust[[camel $el.ID]]Count(phase Phase, delta int) bool {
 	switch phase {
-[[range .Phases]]	case [[.PhaseConst]]:
-		newVal := s.[[.FieldName]] + delta
+[[range .Phases]]	case Phase[[phasePrefix .Phase]]:
+		newVal := s.[[phasePrefix .Phase]][[camel $el.ID]]Count + delta
 		if newVal < 0 {
 			newVal = 0
 		}
-		if newVal == s.[[.FieldName]] {
+		if newVal == s.[[phasePrefix .Phase]][[camel $el.ID]]Count {
 			return false
 		}
-		s.[[.FieldName]] = newVal
+		s.[[phasePrefix .Phase]][[camel $el.ID]]Count = newVal
 		return true
 [[end]]	}
 	return false
@@ -69,26 +69,26 @@ const (
 [[end]]func (s *Score) AdjustCount(id string, phase Phase, delta int) bool {
 	switch id {
 [[range .ScoringCounts]]	case "[[.ID]]":
-		return s.Adjust[[.CamelID]]Count(phase, delta)
+		return s.Adjust[[camel .ID]]Count(phase, delta)
 [[end]]	}
 	return false
 }
 
-[[range .Statuses]]func (s *Score) Set[[.CamelID]]Status(robotIndex int, value [[.GoElemType]]) bool {
+[[range .Statuses]]func (s *Score) Set[[camel .ID]]Status(robotIndex int, value [[if .IsBool]]bool[[else]][[camel .ID]]Status[[end]]) bool {
 	if robotIndex < 0 || robotIndex >= 3 {
 		return false
 	}
-	if s.[[.StatusesField]][robotIndex] == value {
+	if s.[[camel .ID]]Statuses[robotIndex] == value {
 		return false
 	}
-	s.[[.StatusesField]][robotIndex] = value
+	s.[[camel .ID]]Statuses[robotIndex] = value
 	return true
 }
 
 [[end]]func (s *Score) SetBoolStatus(id string, robotIndex int, value bool) bool {
 	switch id {
 [[range .Statuses]][[if .IsBool]]	case "[[.ID]]":
-		return s.Set[[.CamelID]]Status(robotIndex, value)
+		return s.Set[[camel .ID]]Status(robotIndex, value)
 [[end]][[end]]	}
 	return false
 }
@@ -98,27 +98,27 @@ func (s *Score) SetEnumStatus(id string, robotIndex int, valueId string) bool {
 [[range .Statuses]][[if not .IsBool]][[$st := .]]	case "[[$st.ID]]":
 		switch valueId {
 [[range $st.Values]]		case "[[.ID]]":
-			return s.Set[[$st.CamelID]]Status(robotIndex, [[.ConstName]])
+			return s.Set[[camel $st.ID]]Status(robotIndex, [[camel $st.ID]][[camel .ID]])
 [[end]]		}
 [[end]][[end]]	}
 	return false
 }
 
-[[range .Statuses]][[if not .IsBool]]func (s *Score) Cycle[[.CamelID]]Status(robotIndex int) bool {
+[[range .Statuses]][[if not .IsBool]]func (s *Score) Cycle[[camel .ID]]Status(robotIndex int) bool {
 	if robotIndex < 0 || robotIndex >= 3 {
 		return false
 	}
-	next := s.[[.StatusesField]][robotIndex] + 1
-	if int(next) >= [[.NumValues]] {
+	next := s.[[camel .ID]]Statuses[robotIndex] + 1
+	if int(next) >= [[len .Values]] {
 		next = 0
 	}
-	return s.Set[[.CamelID]]Status(robotIndex, next)
+	return s.Set[[camel .ID]]Status(robotIndex, next)
 }
 
 [[end]][[end]]func (s *Score) CycleEnumStatus(id string, robotIndex int) bool {
 	switch id {
 [[range .Statuses]][[if not .IsBool]]	case "[[.ID]]":
-		return s.Cycle[[.CamelID]]Status(robotIndex)
+		return s.Cycle[[camel .ID]]Status(robotIndex)
 [[end]][[end]]	}
 	return false
 }

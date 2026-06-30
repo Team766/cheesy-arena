@@ -9,8 +9,8 @@ const handleRealtimeScoreGenerated = function (data) {
   $("#leftScoreNumber").text(data.Red.ScoreSummary.Score);
   $("#rightScoreNumber").text(data.Blue.ScoreSummary.Score);
 
-[[range .DisplayGroups]]  $(`#left[[.CamelID]]Count`).text([[range $i, $f := .CountFields]][[if $i]] + [[end]](data.Red.Score.[[$f]] || 0)[[end]]);
-  $(`#right[[.CamelID]]Count`).text([[range $i, $f := .CountFields]][[if $i]] + [[end]](data.Blue.Score.[[$f]] || 0)[[end]]);
+[[range .ScoringGroups]]  $(`#left[[camel .ID]]Count`).text([[range $i, $f := .CountFields]][[if $i]] + [[end]](data.Red.Score.[[$f]] || 0)[[end]]);
+  $(`#right[[camel .ID]]Count`).text([[range $i, $f := .CountFields]][[if $i]] + [[end]](data.Blue.Score.[[$f]] || 0)[[end]]);
 [[end]]};
 
 const handleScorePostedGenerated = function (data) {
@@ -51,11 +51,11 @@ const handleScorePostedGenerated = function (data) {
   }
 
   // Populate Red (left) breakdown points
-[[range .DisplayGroups]]  $(`#leftFinal[[.CamelID]]Points`).text([[range $i, $f := .PointsFields]][[if $i]] + [[end]](data.RedScoreSummary.[[$f]] || 0)[[end]]);
-[[end]][[range .Statuses]]  $(`#leftFinal[[.PointsField]]`).text(data.RedScoreSummary.[[.PointsField]]);
+[[range .ScoringGroups]]  $(`#leftFinal[[camel .ID]]Points`).text(data.RedScoreSummary.[[camel .ID]]Points || 0);
+[[end]][[range .Statuses]]  $(`#leftFinal[[camel .ID]]Points`).text(data.RedScoreSummary.[[camel .ID]]Points);
 [[end]]  $(`#leftFinalFoulPoints`).text(data.RedScoreSummary.FoulPoints);
-[[range .RankingPoints]]  $(`#leftFinal[[.Field]]`).html(data.RedScoreSummary.[[.Field]] ? "&#x2714;" : "&#x2718;");
-  $(`#leftFinal[[.Field]]`).attr('data-checked', data.RedScoreSummary.[[.Field]]);
+[[range .RankingPoints]]  $(`#leftFinal[[camel .ID]]RankingPoint`).html(data.RedScoreSummary.[[camel .ID]]RankingPoint ? "&#x2714;" : "&#x2718;");
+  $(`#leftFinal[[camel .ID]]RankingPoint`).attr('data-checked', data.RedScoreSummary.[[camel .ID]]RankingPoint);
 [[end]]  $(`#leftFinalRankingPoints`).html(data.RedRankingPoints);
   $(`#leftFinalWins`).text(data.RedWins);
   const redFinalDestination = $(`#leftFinalDestination`);
@@ -64,11 +64,11 @@ const handleScorePostedGenerated = function (data) {
   redFinalDestination.attr("data-won", data.RedWon);
 
   // Populate Blue (right) breakdown points
-[[range .DisplayGroups]]  $(`#rightFinal[[.CamelID]]Points`).text([[range $i, $f := .PointsFields]][[if $i]] + [[end]](data.BlueScoreSummary.[[$f]] || 0)[[end]]);
-[[end]][[range .Statuses]]  $(`#rightFinal[[.PointsField]]`).text(data.BlueScoreSummary.[[.PointsField]]);
+[[range .ScoringGroups]]  $(`#rightFinal[[camel .ID]]Points`).text(data.BlueScoreSummary.[[camel .ID]]Points || 0);
+[[end]][[range .Statuses]]  $(`#rightFinal[[camel .ID]]Points`).text(data.BlueScoreSummary.[[camel .ID]]Points);
 [[end]]  $(`#rightFinalFoulPoints`).text(data.BlueScoreSummary.FoulPoints);
-[[range .RankingPoints]]  $(`#rightFinal[[.Field]]`).html(data.BlueScoreSummary.[[.Field]] ? "&#x2714;" : "&#x2718;");
-  $(`#rightFinal[[.Field]]`).attr('data-checked', data.BlueScoreSummary.[[.Field]]);
+[[range .RankingPoints]]  $(`#rightFinal[[camel .ID]]RankingPoint`).html(data.BlueScoreSummary.[[camel .ID]]RankingPoint ? "&#x2714;" : "&#x2718;");
+  $(`#rightFinal[[camel .ID]]RankingPoint`).attr('data-checked', data.BlueScoreSummary.[[camel .ID]]RankingPoint);
 [[end]]  $(`#rightFinalRankingPoints`).html(data.BlueRankingPoints);
   $(`#rightFinalWins`).text(data.BlueWins);
   const blueFinalDestination = $(`#rightFinalDestination`);

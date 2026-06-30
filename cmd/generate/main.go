@@ -120,6 +120,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := generateScoreSummaryTest(&yamlData, gameDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating score summary test: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := generateRankingFieldsTest(&yamlData, gameDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating ranking fields test: %v\n", err)
+		os.Exit(1)
+	}
+
 	templatesDir := filepath.Join(*outRoot, "templates")
 	staticJsDir := filepath.Join(*outRoot, "static/js")
 	cmdGenerateDir := filepath.Join(*outRoot, "cmd/generate")
@@ -209,16 +219,16 @@ func validateGameYAML(yamlData *GameYAML) []string {
 		}
 	}
 
-	// Display groups
-	displayGroups := make(map[string]bool)
-	for i, dg := range yamlData.DisplayGroups {
+	// Scoring groups
+	scoringGroups := make(map[string]bool)
+	for i, dg := range yamlData.ScoringGroups {
 		if dg.ID == "" {
-			validationErrors = append(validationErrors, fmt.Sprintf("display_groups[%d]: id is required", i))
+			validationErrors = append(validationErrors, fmt.Sprintf("scoring_groups[%d]: id is required", i))
 		} else if !goIdentRegexp.MatchString(dg.ID) {
-			validationErrors = append(validationErrors, fmt.Sprintf("display_groups[%d]: id '%s' must be a valid Go identifier (letters, digits, underscores; cannot start with a digit)", i, dg.ID))
+			validationErrors = append(validationErrors, fmt.Sprintf("scoring_groups[%d]: id '%s' must be a valid Go identifier (letters, digits, underscores; cannot start with a digit)", i, dg.ID))
 		} else {
-			checkDup(dg.ID, "display_groups")
-			displayGroups[dg.ID] = true
+			checkDup(dg.ID, "scoring_groups")
+			scoringGroups[dg.ID] = true
 		}
 	}
 
@@ -239,8 +249,8 @@ func validateGameYAML(yamlData *GameYAML) []string {
 		} else if !gamePieces[sc.GamePiece] {
 			validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: unknown game_piece '%s'", i, sc.ID, sc.GamePiece))
 		}
-		if sc.DisplayGroup != "" && !displayGroups[sc.DisplayGroup] {
-			validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: unknown display_group '%s'", i, sc.ID, sc.DisplayGroup))
+		if sc.ScoringGroup != "" && !scoringGroups[sc.ScoringGroup] {
+			validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: unknown scoring_group '%s'", i, sc.ID, sc.ScoringGroup))
 		}
 
 		if len(sc.Phases) == 0 {
@@ -318,15 +328,44 @@ func validateGameYAML(yamlData *GameYAML) []string {
 		}
 	}
 
-	// Build map of valid metrics
+	buckets := buildScoringGroups(yamlData)
+
+	// Reject ids whose generated ScoreSummary point field (CamelCase(id)+"Points") collides with a
+	// built-in field or with another generated field. This catches e.g. a scoring_group/status id of
+	// "auto_points" (-> AutoPoints) or "match" (-> MatchPoints), and two ids that CamelCase to the
+	// same name (e.g. "auto_points" and "Auto_points"), either of which would emit uncompilable Go.
+	summaryFields := map[string]string{
+		"AutoPoints": "a built-in field", "TeleopPoints": "a built-in field",
+		"EndgamePoints": "a built-in field", "MatchPoints": "a built-in field",
+		"FoulPoints": "a built-in field", "BonusRankingPoints": "a built-in field",
+	}
+	checkSummaryField := func(id, context string) {
+		field := toCamelCase(id) + "Points"
+		if existing, ok := summaryFields[field]; ok {
+			validationErrors = append(validationErrors, fmt.Sprintf("%s '%s': generated ScoreSummary field %s collides with %s", context, id, field, existing))
+			return
+		}
+		summaryFields[field] = context + " '" + id + "'"
+	}
+	for _, bucket := range buckets {
+		checkSummaryField(bucket.ID, "scoring group") // bucket id = scoring_group id, or ungrouped count's own id
+	}
+	for _, status := range yamlData.Statuses {
+		checkSummaryField(status.ID, "status")
+	}
+
+	// Build the set of valid tiebreaker metrics: the built-in phase/total points, plus every
+	// ScoreSummary point field — one per scoring-group bucket (a scoring_group id, or an ungrouped
+	// element's own id) and one per status. A raw element that is grouped is not valid on its own;
+	// tiebreak on its group instead.
 	validElements := map[string]bool{
 		"auto_points":    true,
 		"teleop_points":  true,
 		"endgame_points": true,
 		"total_points":   true,
 	}
-	for _, sc := range yamlData.ScoringCounts {
-		validElements[sc.ID] = true
+	for _, bucket := range buckets {
+		validElements[bucket.ID] = true
 	}
 	for _, status := range yamlData.Statuses {
 		validElements[status.ID] = true

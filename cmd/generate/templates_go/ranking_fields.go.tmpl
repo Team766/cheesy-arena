@@ -9,7 +9,7 @@ import "math/rand"
 
 type RankingFields struct {
 	RankingPoints int
-[[range .RankingTiebreakerFields]]	[[.]] int
+[[range $field := .RankingTiebreakerFields]]	[[$field]] int
 [[end]]	Random            float64
 	Wins              int
 	Losses            int
@@ -37,7 +37,7 @@ func (fields *RankingFields) AddScoreSummary(own, opponent *ScoreSummary, disqua
 		fields.Losses++
 	}
 	fields.RankingPoints += own.BonusRankingPoints
-[[range .RankingTiebreakerFields]]	fields.[[.]] += own.[[.]]
+[[range $field := .RankingTiebreakerFields]]	fields.[[$field]] += own.[[$field]]
 [[end]]}
 
 type Ranking struct {
@@ -62,8 +62,8 @@ func (rankings Rankings) Less(i, j int) bool {
 	if a.RankingPoints*b.Played != b.RankingPoints*a.Played {
 		return a.RankingPoints*b.Played > b.RankingPoints*a.Played
 	}
-[[range .RankingTiebreakerFields]]	if a.[[.]]*b.Played != b.[[.]]*a.Played {
-		return a.[[.]]*b.Played > b.[[.]]*a.Played
+[[range $field := .RankingTiebreakerFields]]	if a.[[$field]]*b.Played != b.[[$field]]*a.Played {
+		return a.[[$field]]*b.Played > b.[[$field]]*a.Played
 	}
 [[end]]	return a.Random > b.Random
 }

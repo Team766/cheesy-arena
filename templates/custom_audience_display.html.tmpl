@@ -47,9 +47,9 @@
                 <img class="avatar" id="leftTeam3Avatar" src=""/>
               </div>
               <div class="score-fields" style="display: flex; gap: 15px; align-items: center;">
-[[range .DisplayGroups]]                <div class="live-counter-box" style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.4); border: 2px solid rgba(255,255,255,0.2); border-radius: 4px; min-width: 70px; height: 75px; padding: 4px;">
+[[range .ScoringGroups]]                <div class="live-counter-box" style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.4); border: 2px solid rgba(255,255,255,0.2); border-radius: 4px; min-width: 70px; height: 75px; padding: 4px;">
                   <span style="font-size: 10px; color: #ccc; text-transform: uppercase; font-weight: bold; text-align: center;">[[.DisplayName]]</span>
-                  <span id="left[[.CamelID]]Count" style="font-size: 28px; font-weight: bold; color: white;">0</span>
+                  <span id="left[[camel .ID]]Count" style="font-size: 28px; font-weight: bold; color: white;">0</span>
                 </div>
 [[end]]              </div>
               <div class="score-number" id="leftScoreNumber"></div>
@@ -57,9 +57,9 @@
             <div class="score score-right reversible-right">
               <div class="score-number" id="rightScoreNumber"></div>
               <div class="score-fields" style="display: flex; gap: 15px; align-items: center;">
-[[range .DisplayGroups]]                <div class="live-counter-box" style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.4); border: 2px solid rgba(255,255,255,0.2); border-radius: 4px; min-width: 70px; height: 75px; padding: 4px;">
+[[range .ScoringGroups]]                <div class="live-counter-box" style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.4); border: 2px solid rgba(255,255,255,0.2); border-radius: 4px; min-width: 70px; height: 75px; padding: 4px;">
                   <span style="font-size: 10px; color: #ccc; text-transform: uppercase; font-weight: bold; text-align: center;">[[.DisplayName]]</span>
-                  <span id="right[[.CamelID]]Count" style="font-size: 28px; font-weight: bold; color: white;">0</span>
+                  <span id="right[[camel .ID]]Count" style="font-size: 28px; font-weight: bold; color: white;">0</span>
                 </div>
 [[end]]              </div>
               <div class="avatars">
@@ -143,11 +143,11 @@
               </div>
             </div>
             <div class="final-breakdown" id="leftFinalBreakdown">
-[[range .DisplayGroups]]              <div id="leftFinal[[.CamelID]]Points">0</div>
-[[end]][[range .Statuses]]              <div id="leftFinal[[.PointsField]]">0</div>
+[[range .ScoringGroups]]              <div id="leftFinal[[camel .ID]]Points">0</div>
+[[end]][[range .Statuses]]              <div id="leftFinal[[camel .ID]]Points">0</div>
 [[end]]              <div id="leftFinalFoulPoints">0</div>
               <div class="playoff-hidden-field">
-[[range .RankingPoints]]                <div id="leftFinal[[.Field]]">&#x2718;</div>
+[[range .RankingPoints]]                <div id="leftFinal[[camel .ID]]RankingPoint">&#x2718;</div>
 [[end]]                <div id="leftFinalRankingPoints">0</div>
               </div>
               <div class="playoff-only-field">
@@ -156,7 +156,7 @@
               </div>
             </div>
             <div class="final-breakdown" id="centerFinalBreakdown" style="text-align: center;">
-[[range .DisplayGroups]]              <div>[[.DisplayName]]</div>
+[[range .ScoringGroups]]              <div>[[.DisplayName]]</div>
 [[end]][[range .Statuses]]              <div>[[.DisplayName]]</div>
 [[end]]              <div>Foul</div>
               <div class="playoff-hidden-field">
@@ -169,11 +169,11 @@
               </div>
             </div>
             <div class="final-breakdown" id="rightFinalBreakdown" style="text-align: right;">
-[[range .DisplayGroups]]              <div id="rightFinal[[.CamelID]]Points">0</div>
-[[end]][[range .Statuses]]              <div id="rightFinal[[.PointsField]]">0</div>
+[[range .ScoringGroups]]              <div id="rightFinal[[camel .ID]]Points">0</div>
+[[end]][[range .Statuses]]              <div id="rightFinal[[camel .ID]]Points">0</div>
 [[end]]              <div id="rightFinalFoulPoints">0</div>
               <div class="playoff-hidden-field">
-[[range .RankingPoints]]                <div id="rightFinal[[.Field]]">&#x2718;</div>
+[[range .RankingPoints]]                <div id="rightFinal[[camel .ID]]RankingPoint">&#x2718;</div>
 [[end]]                <div id="rightFinalRankingPoints">0</div>
               </div>
               <div class="playoff-only-field">

@@ -25,7 +25,7 @@ const cycleEnumStatus = function (id, robotIndex) {
   websocket.send("cycleEnumStatus", {Id: id, RobotIndex: robotIndex});
 };
 
-[[range .Statuses]][[if not .IsBool]]const [[.CamelID]]Names = [[jsStrings .ValueNames]];
+[[range .Statuses]][[if not .IsBool]]const [[camel .ID]]Names = [[jsStrings (displayNames .Values)]];
 [[end]][[end]]
 const handleRealtimeScoreGenerated = function (data) {
   let score;
@@ -36,17 +36,17 @@ const handleRealtimeScoreGenerated = function (data) {
   }
 
   // Update counts
-[[range .ScoringCounts]][[range .Phases]]  $(`#[[.ID]]-[[.Phase]]-count`).text(score.[[.FieldName]]);
+[[range .ScoringCounts]][[range .Phases]]  $(`#[[.ID]]-[[.Phase]]-count`).text(score.[[phasePrefix .Phase]][[camel .ID]]Count);
 [[end]][[end]]
   // Update statuses
 [[range .Statuses]][[if .IsBool]]  for (let i = 0; i < 3; i++) {
-    const val = !!score.[[.StatusesField]][i];
+    const val = !!score.[[camel .ID]]Statuses[i];
     boolStatuses['[[.ID]]-' + i] = val;
     $("#[[.ID]]-" + i).attr('data-selected', val);
   }
 [[else]]  for (let i = 0; i < 3; i++) {
-    const idx = score.[[.StatusesField]][i];
-    $(`#[[.ID]]-${i}`).text([[.CamelID]]Names[idx]);
+    const idx = score.[[camel .ID]]Statuses[i];
+    $(`#[[.ID]]-${i}`).text([[camel .ID]]Names[idx]);
     $(`#[[.ID]]-${i}`).attr('data-selected', idx !== 0);
   }
 [[end]][[end]]

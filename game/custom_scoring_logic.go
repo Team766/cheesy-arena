@@ -4,21 +4,30 @@ package game
 
 // Custom scoring logic for the active custom game. Hand-written; never generated or touched by
 // `go generate`. Every logic_func named in custom_game.yaml's ranking_points needs a matching func
-// here with the signature `func(score Score, opponentScore Score) bool` — the examples below show
-// the pattern (they reference fields from the generated Score struct).
+// here with the signature:
+//
+//	func(score, opponentScore Score, summary ScoreSummary) bool
+//
+//   - summary is this alliance's fully-computed ScoreSummary — prefer its generated totals (e.g.
+//     summary.AutoPoints, summary.ShipPoints) over re-deriving them from raw counts, so the logic
+//     can't drift from the generated point math.
+//   - score / opponentScore are the raw per-element counts, for thresholds the summary doesn't
+//     expose (and for cross-alliance logic). The opponent's *summary* is deliberately not passed —
+//     it would recurse back through this same logic.
 
 // ComputeAutonRP: alliance places more than 2 game pieces on Structure 1 (either level) during auto.
-func ComputeAutonRP(score Score, opponentScore Score) bool {
+// (Could also be written against the summary, e.g. `return summary.AutoPoints >= 9`.)
+func ComputeAutonRP(score, opponentScore Score, summary ScoreSummary) bool {
 	return score.AutoStructure1Level1Count+score.AutoStructure1Level2Count > 2
 }
 
 // ComputeScoringRP: alliance places 10 or more game pieces on Structure 1 during teleop.
-func ComputeScoringRP(score Score, opponentScore Score) bool {
+func ComputeScoringRP(score, opponentScore Score, summary ScoreSummary) bool {
 	return score.TeleopStructure1Level1Count+score.TeleopStructure1Level2Count >= 10
 }
 
 // ComputeEndgameRP: alliance parks at least two of three robots.
-func ComputeEndgameRP(score Score, opponentScore Score) bool {
+func ComputeEndgameRP(score, opponentScore Score, summary ScoreSummary) bool {
 	parked := 0
 	for _, p := range score.ParkStatuses {
 		if p {

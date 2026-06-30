@@ -7,12 +7,14 @@ package game
 
 // Per-element point constants (only used in Summarize() below)
 const (
-[[range .PointConstants]]	[[.Name]] = [[.Points]]
-[[end]])
+[[range $el := .ScoringCounts]][[range .Phases]]	[[camel $el.ID]][[phasePrefix .Phase]]PointsVal = [[.Points]]
+[[end]][[end]][[range $st := .Statuses]][[if $st.IsBool]]	[[camel $st.ID]]PointsVal = [[$st.Points]]
+[[else]][[range $st.Values]]	[[camel $st.ID]][[camel .ID]]PointsVal = [[.Points]]
+[[end]][[end]][[end]])
 
 type ScoreSummary struct {
-[[range .ScoringCounts]]	[[.CamelID]]Points int
-[[end]][[range .Statuses]]	[[.PointsField]] int
+[[range .ScoringGroups]]	[[camel .ID]]Points int
+[[end]][[range .Statuses]]	[[camel .ID]]Points int
 [[end]]
 	AutoPoints    int
 	TeleopPoints  int
@@ -26,7 +28,7 @@ type ScoreSummary struct {
 	PlayoffDq             bool
 	NumOpponentMajorFouls int
 
-[[range .RankingPoints]]	[[.Field]] bool
+[[range .RankingPoints]]	[[camel .ID]]RankingPoint bool
 [[end]]	BonusRankingPoints int
 }
 
@@ -41,21 +43,21 @@ func (score *Score) Summarize(opponentScore *Score) *ScoreSummary {
 	var teleopPoints int
 	var endgamePoints int
 
-[[range .ScoringCounts]][[$el := .]][[range .Phases]]	[[.Phase]][[$el.CamelID]] := score.[[.FieldName]] * [[$el.CamelID]][[.PhasePrefix]]PointsVal
-	[[.Phase]]Points += [[.Phase]][[$el.CamelID]]
-	summary.[[$el.CamelID]]Points += [[.Phase]][[$el.CamelID]]
+[[range .ScoringCounts]][[$el := .]][[range .Phases]]	[[.Phase]][[camel $el.ID]] := score.[[phasePrefix .Phase]][[camel $el.ID]]Count * [[camel $el.ID]][[phasePrefix .Phase]]PointsVal
+	[[.Phase]]Points += [[.Phase]][[camel $el.ID]]
+	summary.[[camel $el.Group]]Points += [[.Phase]][[camel $el.ID]]
 [[end]][[end]]
-[[range .Statuses]][[$st := .]][[if .IsBool]]	for _, v := range score.[[$st.StatusesField]] {
+[[range .Statuses]][[$st := .]][[if .IsBool]]	for _, v := range score.[[camel $st.ID]]Statuses {
 		if v {
-			summary.[[$st.PointsField]] += [[$st.PointsValConst]]
-			[[$st.PhasePointsVar]] += [[$st.PointsValConst]]
+			summary.[[camel $st.ID]]Points += [[camel $st.ID]]PointsVal
+			[[$st.Phase]]Points += [[camel $st.ID]]PointsVal
 		}
 	}
-[[else]]	for _, v := range score.[[$st.StatusesField]] {
+[[else]]	for _, v := range score.[[camel $st.ID]]Statuses {
 		switch v {
-[[range $st.Values]]		case [[.ConstName]]:
-			summary.[[$st.PointsField]] += [[.PointsValConst]]
-			[[$st.PhasePointsVar]] += [[.PointsValConst]]
+[[range $st.Values]]		case [[camel $st.ID]][[camel .ID]]:
+			summary.[[camel $st.ID]]Points += [[camel $st.ID]][[camel .ID]]PointsVal
+			[[$st.Phase]]Points += [[camel $st.ID]][[camel .ID]]PointsVal
 [[end]]		}
 	}
 [[end]][[end]]
@@ -72,8 +74,8 @@ func (score *Score) Summarize(opponentScore *Score) *ScoreSummary {
 	}
 	summary.Score = summary.MatchPoints + summary.FoulPoints
 
-[[range .RankingPoints]]	summary.[[.Field]] = [[.LogicFunc]](*score, *opponentScore)
-	if summary.[[.Field]] {
+[[range .RankingPoints]]	summary.[[camel .ID]]RankingPoint = [[.LogicFunc]](*score, *opponentScore, *summary)
+	if summary.[[camel .ID]]RankingPoint {
 		summary.BonusRankingPoints++
 	}
 [[end]]

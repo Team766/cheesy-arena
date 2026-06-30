@@ -3,148 +3,25 @@
 package game
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
-func TestScoreEquals(t *testing.T) {
-	s1 := &Score{
-		AutoStructure1Level1Count: 1,
-		Fouls:                     []Foul{{FoulId: 1, IsMajor: true}},
-	}
-	s2 := &Score{
-		AutoStructure1Level1Count: 1,
-		Fouls:                     []Foul{{FoulId: 1, IsMajor: true}},
-	}
-	s3 := &Score{
-		AutoStructure1Level1Count: 2,
-		Fouls:                     []Foul{{FoulId: 1, IsMajor: true}},
-	}
-	s4 := &Score{
-		AutoStructure1Level1Count: 1,
-		Fouls:                     []Foul{{FoulId: 2, IsMajor: true}},
-	}
-
-	assert.True(t, s1.Equals(s2))
-	assert.False(t, s1.Equals(s3))
-	assert.False(t, s1.Equals(s4))
-}
-
-func TestScoreSummarizeAutoPortion(t *testing.T) {
-	score := &Score{
-		AutoStructure1Level1Count:   1,                           // 3 pts auto
-		TeleopStructure1Level1Count: 1,                           // 1 pt teleop
-		LeaveStatuses:               [3]bool{true, false, false}, // 3 pts auto
-	}
-	opponent := &Score{
-		Fouls: []Foul{{FoulId: 1, IsMajor: false}}, // 5 pts foul points to score
-	}
-
-	summary := score.Summarize(opponent)
-
-	// Structure1Level1Points = 3 + 1 = 4
-	assert.Equal(t, 4, summary.Structure1Level1Points)
-	// AutoPoints = 3 (structure1_level1 auto) + 3 (leave) = 6
-	assert.Equal(t, 6, summary.AutoPoints)
-	// TeleopPoints = 1 (structure1_level1 teleop) = 1
-	assert.Equal(t, 1, summary.TeleopPoints)
-	// MatchPoints = 6 + 1 = 7
-	assert.Equal(t, 7, summary.MatchPoints)
-	// FoulPoints = 5 (minor foul points in custom_game.yaml)
-	assert.Equal(t, 5, summary.FoulPoints)
-	// Score = 7 + 5 = 12
-	assert.Equal(t, 12, summary.Score)
-}
-
-func TestDetermineMatchStatusTiebreaker(t *testing.T) {
-	// Tied score, Red wins on auto points
-	red := &ScoreSummary{
-		Score:       10,
-		AutoPoints:  6,
-		MatchPoints: 10,
-	}
-	blue := &ScoreSummary{
-		Score:       10,
-		AutoPoints:  4,
-		MatchPoints: 10,
-	}
-
-	// Without tiebreakers: returns TieMatch
-	status, label := DetermineMatchStatus(red, blue, false)
-	assert.Equal(t, TieMatch, status)
-	assert.Equal(t, "", label)
-
-	// With tiebreakers: returns RedWonMatch with auto points label
-	status, label = DetermineMatchStatus(red, blue, true)
-	assert.Equal(t, RedWonMatch, status)
-	assert.Equal(t, "TIEBREAK: AUTO POINTS", label)
-
-	// Tied score and auto points, Blue wins on total points (MatchPoints)
-	red.AutoPoints = 4
-	red.MatchPoints = 8
-	blue.MatchPoints = 10
-	status, label = DetermineMatchStatus(red, blue, true)
-	assert.Equal(t, BlueWonMatch, status)
-	assert.Equal(t, "TIEBREAK: TOTAL POINTS", label)
-}
+// Hand-written, config-agnostic framework tests. Config-specific correctness — point math, the
+// tiebreak cascade, ranking sort, and the Score mutators — is owned by the generated_*_test.go
+// files (regenerated per custom_game.yaml). Everything here uses only always-present fields.
 
 func TestAddScoreSummary(t *testing.T) {
 	fields := &RankingFields{}
-	own := &ScoreSummary{
-		Score:              15,
-		MatchPoints:        15,
-		AutoPoints:         8,
-		BonusRankingPoints: 1,
-	}
-	opponent := &ScoreSummary{
-		Score: 10,
-	}
+	own := &ScoreSummary{Score: 15, BonusRankingPoints: 1}
+	opponent := &ScoreSummary{Score: 10}
 
 	fields.AddScoreSummary(own, opponent, false)
 
 	assert.Equal(t, 1, fields.Played)
 	assert.Equal(t, 1, fields.Wins)
-	assert.Equal(t, 4, fields.RankingPoints) // 3 for win + 1 bonus RP
-	assert.Equal(t, 15, fields.MatchPoints)
-	assert.Equal(t, 8, fields.AutoPoints)
-}
-
-func TestRankingsLess(t *testing.T) {
-	rankings := Rankings{
-		{
-			TeamId: 1,
-			RankingFields: RankingFields{
-				RankingPoints: 10,
-				MatchPoints:   200,
-				AutoPoints:    80,
-				Played:        10,
-			},
-		},
-		{
-			TeamId: 2,
-			RankingFields: RankingFields{
-				RankingPoints: 10,
-				MatchPoints:   200,
-				AutoPoints:    60,
-				Played:        10,
-			},
-		},
-		{
-			TeamId: 3,
-			RankingFields: RankingFields{
-				RankingPoints: 8,
-				MatchPoints:   300,
-				AutoPoints:    100,
-				Played:        10,
-			},
-		},
-	}
-
-	// 1st ranking points tie: Team 1 (AutoPoints 80) should sort before Team 2 (AutoPoints 60).
-	// Team 3 has fewer ranking points, should sort last.
-	assert.True(t, rankings.Less(0, 1)) // Team 1 vs Team 2
-	assert.True(t, rankings.Less(0, 2)) // Team 1 vs Team 3
-	assert.True(t, rankings.Less(1, 2)) // Team 2 vs Team 3
+	assert.Equal(t, 4, fields.RankingPoints) // 3 for the win + 1 bonus RP
 }
 
 func TestGetAllRulesCustom(t *testing.T) {

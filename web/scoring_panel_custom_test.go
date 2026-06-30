@@ -4,6 +4,7 @@ package web
 
 import (
 	"github.com/Team254/cheesy-arena/field"
+	"github.com/Team254/cheesy-arena/game"
 	"github.com/Team254/cheesy-arena/websocket"
 	gorillawebsocket "github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
@@ -54,69 +55,23 @@ func TestScoringPanelWebsocketCustom(t *testing.T) {
 	readWebsocketType(t, blueWs, "matchTime")
 	readWebsocketType(t, blueWs, "realtimeScore")
 
-	// Send some count adjustment commands.
-	adjustData := struct {
+	// adjustCount / setStatus dispatch is exercised generically here: the per-element id→field routing
+	// and point math are owned by the generated Score tests (generated_score*_test.go, regenerated per
+	// custom_game.yaml), so this test stays config-agnostic. An unknown id is a graceful no-op — the
+	// handler only broadcasts on a real change — which we confirm below (no points leak into the score).
+	redWs.Write("adjustCount", struct {
 		Id    string
 		Phase string
 		Delta int
-	}{}
-	assert.Equal(t, 0, web.arena.RedRealtimeScore.CurrentScore.AutoStructure1Level1Count)
-	assert.Equal(t, 0, web.arena.RedRealtimeScore.CurrentScore.TeleopStructure1Level1Count)
-	assert.Equal(t, 0, web.arena.BlueRealtimeScore.CurrentScore.AutoStructure1Level1Count)
-	assert.Equal(t, 0, web.arena.BlueRealtimeScore.CurrentScore.TeleopStructure1Level1Count)
-
-	adjustData.Id = "structure1_level1"
-	adjustData.Phase = "auto"
-	adjustData.Delta = 2
-	redWs.Write("adjustCount", adjustData)
-
-	adjustData.Id = "structure1_level1"
-	adjustData.Phase = "teleop"
-	adjustData.Delta = 3
-	blueWs.Write("adjustCount", adjustData)
-
-	adjustData.Id = "structure2_level1"
-	adjustData.Phase = "teleop"
-	adjustData.Delta = 1
-	redWs.Write("adjustCount", adjustData)
-
-	for i := 0; i < 3; i++ {
-		readWebsocketType(t, redWs, "realtimeScore")
-		readWebsocketType(t, blueWs, "realtimeScore")
-	}
-
-	assert.Equal(t, 2, web.arena.RedRealtimeScore.CurrentScore.AutoStructure1Level1Count)
-	assert.Equal(t, 3, web.arena.BlueRealtimeScore.CurrentScore.TeleopStructure1Level1Count)
-	assert.Equal(t, 1, web.arena.RedRealtimeScore.CurrentScore.TeleopStructure2Level1Count)
-
-	// Send status commands.
-	statusData := struct {
+	}{Id: "__nonexistent__", Phase: "auto", Delta: 5})
+	redWs.Write("setStatus", struct {
 		Id         string
 		RobotIndex int
 		Value      bool
-	}{}
-	assert.Equal(t, [3]bool{false, false, false}, web.arena.RedRealtimeScore.CurrentScore.LeaveStatuses)
-	assert.Equal(t, [3]bool{false, false, false}, web.arena.BlueRealtimeScore.CurrentScore.ParkStatuses)
+	}{Id: "__nonexistent__", RobotIndex: 0, Value: true})
 
-	statusData.Id = "leave"
-	statusData.RobotIndex = 0
-	statusData.Value = true
-	redWs.Write("setStatus", statusData)
-
-	statusData.Id = "park"
-	statusData.RobotIndex = 2
-	statusData.Value = true
-	blueWs.Write("setStatus", statusData)
-
-	for i := 0; i < 2; i++ {
-		readWebsocketType(t, redWs, "realtimeScore")
-		readWebsocketType(t, blueWs, "realtimeScore")
-	}
-
-	assert.Equal(t, [3]bool{true, false, false}, web.arena.RedRealtimeScore.CurrentScore.LeaveStatuses)
-	assert.Equal(t, [3]bool{false, false, true}, web.arena.BlueRealtimeScore.CurrentScore.ParkStatuses)
-
-	// Add a couple of fouls.
+	// Add a couple of fouls — a websocket command that always changes the score, exercising the full
+	// cmd → handler → score → RealtimeScoreNotifier → broadcast pipeline config-agnostically.
 	foulData := struct {
 		Alliance string
 		IsMajor  bool
@@ -135,6 +90,9 @@ func TestScoringPanelWebsocketCustom(t *testing.T) {
 	assert.Equal(t, true, web.arena.RedRealtimeScore.CurrentScore.Fouls[0].IsMajor)
 	assert.Equal(t, 1, len(web.arena.BlueRealtimeScore.CurrentScore.Fouls))
 	assert.Equal(t, false, web.arena.BlueRealtimeScore.CurrentScore.Fouls[0].IsMajor)
+
+	// The earlier unknown-id adjustCount/setStatus were no-ops: no element/status points entered the score.
+	assert.Equal(t, 0, web.arena.RedRealtimeScore.CurrentScore.Summarize(&game.Score{}).MatchPoints)
 
 	// Test committing logic.
 	redWs.Write("commitMatch", nil)

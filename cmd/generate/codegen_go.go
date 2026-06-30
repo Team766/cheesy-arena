@@ -1,13 +1,16 @@
 // Code generators for the server-side Go: game/generated_{constants,score,score_summary,
 // ranking_fields}.go. Each emits the gofmt'd output of a templates_go/*.go.tmpl executed against
-// the view model (see viewmodel.go). Companion to codegen_web.go (HTML/JS) and codegen_tests.go.
+// the view model (see viewmodel.go). The matching test generators live in codegen_go_tests.go;
+// the web UI generators in codegen_web.go.
 
 package main
 
 import "path/filepath"
 
+// phaseFieldPrefix maps a phase to its Go field-name prefix. It's the single source for that mapping,
+// used by the `phasePrefix` template helper (template_funcs.go) and by the CountFields joins in
+// buildTemplateData (viewmodel.go).
 var phaseFieldPrefix = map[string]string{"auto": "Auto", "teleop": "Teleop", "endgame": "Endgame"}
-var phaseConstName = map[string]string{"auto": "PhaseAuto", "teleop": "PhaseTeleop", "endgame": "PhaseEndgame"}
 
 // generateConstants emits game/generated_constants.go — game-wide metadata, mode flags, foul points.
 func generateConstants(yamlData *GameYAML, destDir string) error {

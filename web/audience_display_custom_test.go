@@ -82,25 +82,23 @@ func TestAudienceDisplayWebsocket(t *testing.T) {
 	assert.True(t, ok)
 	web.arena.RealtimeScoreNotifier.Notify()
 	readWebsocketType(t, ws, "realtimeScore")
+	// Post a saved match result and confirm the scorePosted message is delivered with the tiebreak
+	// reason. Two empty scores tie at 0, so DetermineMatchStatus runs the whole cascade to "TRUE TIE"
+	// — config-agnostic. The specific tiebreak *outcomes* are covered by the generated
+	// DetermineMatchStatus tests (regenerated per custom_game.yaml).
 	web.arena.SavedMatch = &model.Match{
-		Status:              game.RedWonMatch,
+		Status:              game.TieMatch,
 		UseTiebreakCriteria: true,
 	}
 	web.arena.SavedMatchResult = &model.MatchResult{
-		RedScore: &game.Score{},
-		BlueScore: &game.Score{
-			AutoStructure1Level1Count:   1,                                       // 3 points
-			AutoStructure1Level2Count:   1,                                       // 5 points
-			TeleopStructure1Level1Count: 4,                                       // 4 points
-			TeleopStructure1Level2Count: 1,                                       // 3 points (total 15, ties Red)
-			Fouls:                       []game.Foul{{FoulId: 1, IsMajor: true}}, // Gives Red 15 points
-		},
+		RedScore:  &game.Score{},
+		BlueScore: &game.Score{},
 		RedCards:  map[string]string{},
 		BlueCards: map[string]string{},
 	}
 	web.arena.ScorePostedNotifier.Notify()
 	scorePosted := readWebsocketType(t, ws, "scorePosted").(map[string]any)
-	assert.Equal(t, "TIEBREAK: MAJOR FOULS", scorePosted["TiebreakReason"])
+	assert.Equal(t, "TRUE TIE", scorePosted["TiebreakReason"])
 
 	// Test other overlays.
 	web.arena.AllianceSelectionNotifier.Notify()

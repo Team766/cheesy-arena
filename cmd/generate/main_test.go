@@ -79,7 +79,7 @@ func TestValidationErrors(t *testing.T) {
 		{
 			name: "scoring count with duplicate phase",
 			modify: func(y *GameYAML) {
-				y.ScoringCounts[0].Phases = []ElementPhase{
+				y.ScoringCounts[0].Phases = []PhasePoints{
 					{Phase: "auto", Points: 5},
 					{Phase: "auto", Points: 3},
 				}
@@ -89,16 +89,16 @@ func TestValidationErrors(t *testing.T) {
 		{
 			name: "scoring count phase with non-positive points",
 			modify: func(y *GameYAML) {
-				y.ScoringCounts[0].Phases = []ElementPhase{{Phase: "auto", Points: 0}}
+				y.ScoringCounts[0].Phases = []PhasePoints{{Phase: "auto", Points: 0}}
 			},
 			expectedError: "points must be > 0",
 		},
 		{
-			name: "unknown display_group reference",
+			name: "unknown scoring_group reference",
 			modify: func(y *GameYAML) {
-				y.ScoringCounts[0].DisplayGroup = "nonexistent"
+				y.ScoringCounts[0].ScoringGroup = "nonexistent"
 			},
-			expectedError: "unknown display_group 'nonexistent'",
+			expectedError: "unknown scoring_group 'nonexistent'",
 		},
 		{
 			name: "missing game_piece rejected",
@@ -113,7 +113,7 @@ func TestValidationErrors(t *testing.T) {
 				y.Statuses = []Status{
 					{
 						ID:     "bad_status",
-						Phases: []ElementPhase{{Phase: "auto"}},
+						Phases: []PhasePoints{{Phase: "auto"}},
 						Values: []StatusValue{
 							{ID: "one", DisplayName: "One"},
 						},
@@ -125,14 +125,14 @@ func TestValidationErrors(t *testing.T) {
 		{
 			name: "status with teleop phase rejected",
 			modify: func(y *GameYAML) {
-				y.Statuses[0].Phases = []ElementPhase{{Phase: "teleop", Points: 3}}
+				y.Statuses[0].Phases = []PhasePoints{{Phase: "teleop", Points: 3}}
 			},
 			expectedError: "only auto and endgame are supported for statuses",
 		},
 		{
 			name: "status with more than one phase rejected",
 			modify: func(y *GameYAML) {
-				y.Statuses[0].Phases = []ElementPhase{{Phase: "auto", Points: 3}, {Phase: "endgame", Points: 3}}
+				y.Statuses[0].Phases = []PhasePoints{{Phase: "auto", Points: 3}, {Phase: "endgame", Points: 3}}
 			},
 			expectedError: "exactly one phase is required",
 		},
@@ -147,9 +147,26 @@ func TestValidationErrors(t *testing.T) {
 			name: "duplicate id across sections",
 			modify: func(y *GameYAML) {
 				// Duplicate leave in scoring counts
-				y.ScoringCounts = append(y.ScoringCounts, ScoringCount{ID: "leave", GamePiece: y.GamePieces[0].ID, Phases: []ElementPhase{{Phase: "auto", Points: 5}}})
+				y.ScoringCounts = append(y.ScoringCounts, ScoringCount{ID: "leave", GamePiece: y.GamePieces[0].ID, Phases: []PhasePoints{{Phase: "auto", Points: 5}}})
 			},
 			expectedError: "duplicate id: 'leave'",
+		},
+		{
+			name: "id collides with a built-in summary field",
+			modify: func(y *GameYAML) {
+				// "match" -> MatchPoints, which already exists as a built-in ScoreSummary field.
+				y.Statuses[0].ID = "match"
+			},
+			expectedError: "collides with a built-in field",
+		},
+		{
+			name: "two ids generate the same summary field",
+			modify: func(y *GameYAML) {
+				// "Structure1" CamelCases to the same field as scoring_group "structure1"
+				// (-> Structure1Points), yet is a distinct raw id, so the dup-id check misses it.
+				y.Statuses = append(y.Statuses, Status{ID: "Structure1", Phases: []PhasePoints{{Phase: "auto", Points: 3}}})
+			},
+			expectedError: "collides with scoring group 'structure1'",
 		},
 	}
 

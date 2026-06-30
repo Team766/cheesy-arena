@@ -5,18 +5,20 @@ fouls:
   minor_foul_points: 5
   major_foul_points: 15
 
-# game_pieces: Declare the actual physical game pieces. Referenced by scoring_counts[].game_piece.
-# Purely a label today — not used for any point computation or audience-display grouping.
+# game_pieces: Declare the actual physical game pieces. Required on each scoring_counts entry (a
+# count is always "a robot scoring a piece"). Piece identity only — it is not a rollup; to group
+# counts together, give them a shared scoring_group (below).
 game_pieces:
   - id: game_piece_1
     display_name: "Game Piece 1"
   - id: game_piece_2
     display_name: "Game Piece 2"
 
-# display_groups: Declare audience-display rollup buckets, independent of game_pieces. A
-# scoring_counts entry tagged with display_group has its live count and final points summed
-# into this bucket; entries with no display_group fall back to game_piece, then to their own id.
-display_groups:
+# scoring_groups: Declare rollup buckets. A scoring_counts entry tagged with scoring_group has its
+# live count and points summed into this bucket — both the ScoreSummary point field
+# (summary.<Group>Points) and the audience display. An entry with no scoring_group is its own
+# bucket under its own id (so a lone element needs no wrapper group). Tiebreakers reference buckets.
+scoring_groups:
   - id: structure1
     display_name: "Struct 1"
   - id: structure2
@@ -29,7 +31,7 @@ scoring_counts:
   - id: structure1_level1
     display_name: "S1L1"
     game_piece: game_piece_1
-    display_group: structure1
+    scoring_group: structure1
     phases:
       - phase: auto
         points: 3
@@ -39,7 +41,7 @@ scoring_counts:
   - id: structure1_level2
     display_name: "S1L2"
     game_piece: game_piece_1
-    display_group: structure1
+    scoring_group: structure1
     phases:
       - phase: auto
         points: 5
@@ -49,7 +51,7 @@ scoring_counts:
   - id: structure2_level1
     display_name: "S2"
     game_piece: game_piece_2
-    display_group: structure2
+    scoring_group: structure2
     phases:
       - phase: auto
         points: 4

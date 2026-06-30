@@ -1,58 +1,53 @@
 // Code generators for the web UI surfaces — scoring panel, referee panel, and audience display
-// (HTML + JS) — produced by executing the committed templates/static custom_*.tmpl sources.
-// Companion to codegen_go.go (server Go) and codegen_tests.go.
+// (HTML + JS) — produced by executing the committed templates/static custom_*.tmpl sources. The
+// test generator for these surfaces lives in codegen_web_tests.go; the server Go in codegen_go.go.
 
 package main
 
 import "path/filepath"
 
-// DisplayBucket collapses ScoringCounts elements into one audience-display entry, per the
-// fallback chain: DisplayGroup (if set) -> GamePiece (if set) -> the element's own id/display
-// name. DisplayGroup and GamePiece are independent FK namespaces (an id could coincidentally
-// collide between the two lists), so lookups are keyed separately to avoid cross-namespace
-// false matches; ID/DisplayName on the result are always the resolved, presentable values.
-type DisplayBucket struct {
+// ScoringBucket is one rolled-up scoring group — a ScoreSummary point field and an audience-display
+// entry. ID/DisplayName are the resolved, presentable label; CountIDs are the scoring counts
+// merged into this bucket.
+type ScoringBucket struct {
 	ID          string
 	DisplayName string
-	ElementIDs  []string
+	CountIDs    []string
 }
 
-func buildDisplayGroups(yamlData *GameYAML) []DisplayBucket {
-	var buckets []DisplayBucket
-	seen := make(map[string]int)
+// buildScoringGroups resolves every scoring count into the bucket it rolls up into, merging counts
+// that land in the same bucket. A count with a scoring_group joins that group's bucket; a count with
+// no scoring_group stands alone as its own bucket under its own id. (game_piece is piece identity,
+// not a rollup — to group counts, give them a shared scoring_group.)
+//
+// The lookup key is tagged by source ("sg:"/"ct:") so a scoring_group and an ungrouped count that
+// happen to share the same id string aren't merged into one bucket by accident.
+func buildScoringGroups(yamlData *GameYAML) []ScoringBucket {
+	var buckets []ScoringBucket
+	seen := make(map[string]int) // lookup key -> index in buckets, so repeats merge into one bucket
 
 	for _, sc := range yamlData.ScoringCounts {
 		var lookupKey, groupID, displayName string
-		switch {
-		case sc.DisplayGroup != "":
-			lookupKey = "dg:" + sc.DisplayGroup
-			groupID = sc.DisplayGroup
-			displayName = sc.DisplayGroup
-			for _, dg := range yamlData.DisplayGroups {
-				if dg.ID == sc.DisplayGroup {
-					displayName = dg.DisplayName
+		if sc.ScoringGroup != "" { // grouped: roll up with the other counts in this scoring_group
+			lookupKey = "sg:" + sc.ScoringGroup
+			groupID = sc.ScoringGroup
+			displayName = sc.ScoringGroup
+			for _, group := range yamlData.ScoringGroups {
+				if group.ID == sc.ScoringGroup {
+					displayName = group.DisplayName // prefer the group's label over its raw id
 				}
 			}
-		case sc.GamePiece != "":
-			lookupKey = "gp:" + sc.GamePiece
-			groupID = sc.GamePiece
-			displayName = sc.GamePiece
-			for _, gp := range yamlData.GamePieces {
-				if gp.ID == sc.GamePiece {
-					displayName = gp.DisplayName
-				}
-			}
-		default:
-			lookupKey = "el:" + sc.ID
+		} else { // ungrouped: the count is its own bucket
+			lookupKey = "ct:" + sc.ID
 			groupID = sc.ID
 			displayName = sc.DisplayName
 		}
 
 		if idx, ok := seen[lookupKey]; ok {
-			buckets[idx].ElementIDs = append(buckets[idx].ElementIDs, sc.ID)
+			buckets[idx].CountIDs = append(buckets[idx].CountIDs, sc.ID)
 		} else {
 			seen[lookupKey] = len(buckets)
-			buckets = append(buckets, DisplayBucket{ID: groupID, DisplayName: displayName, ElementIDs: []string{sc.ID}})
+			buckets = append(buckets, ScoringBucket{ID: groupID, DisplayName: displayName, CountIDs: []string{sc.ID}})
 		}
 	}
 

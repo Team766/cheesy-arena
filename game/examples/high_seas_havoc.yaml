@@ -9,11 +9,11 @@ game_pieces:
   - id: cannonball
     display_name: "Cannonball"
 
-# display_groups: matches the real audience display from ~/Code/mayhem-fms-2025 (the FMS
+# scoring_groups: matches the real audience display from ~/Code/mayhem-fms-2025 (the FMS
 # implementation for this game), which combines Hull+Deck into one "Ship" total and reports
 # Kraken Lair separately as "Lair" — a structure-level rollup, distinct from game_piece (there's
 # only one piece, the cannonball, scored on three structures).
-display_groups:
+scoring_groups:
   - id: ship
     display_name: "Ship"
   - id: lair
@@ -23,7 +23,7 @@ scoring_counts:
   - id: hull
     display_name: "Hull"
     game_piece: cannonball
-    display_group: ship
+    scoring_group: ship
     phases:
       - phase: auto
         points: 4
@@ -33,7 +33,7 @@ scoring_counts:
   - id: deck
     display_name: "Deck"
     game_piece: cannonball
-    display_group: ship
+    scoring_group: ship
     phases:
       - phase: auto
         points: 10
@@ -43,7 +43,7 @@ scoring_counts:
   - id: kraken_lair
     display_name: "Kraken Lair"
     game_piece: cannonball
-    display_group: lair
+    scoring_group: lair
     phases:
       - phase: endgame
         points: 10
@@ -89,12 +89,16 @@ ranking_points:
     display_name: "Endgame Bonus"
     logic_func: "ComputeEndgameRP"
 
+# Tiebreakers reference scoring-group totals (ship, lair), not raw elements. mayhem's real game
+# tiebreaks on Deck specifically (a member of Ship); mirroring that exactly would need group nesting
+# (Deck both its own group and part of Ship), which isn't supported yet — so this tiebreaks on the
+# Ship total instead.
 ranking_tiebreakers:
   - metric: total_points
   - metric: auto_points
-  - metric: kraken_lair
+  - metric: lair
 
 playoff_tiebreakers:
-  - metric: kraken_lair
-  - metric: deck
+  - metric: lair
+  - metric: ship
   - metric: auto_points

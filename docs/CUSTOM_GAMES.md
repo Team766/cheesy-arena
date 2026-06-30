@@ -56,16 +56,16 @@ fouls:
   major_foul_points: 10
 ```
 
-**`game_pieces`** — the game pieces being manipulated by alliance robots. Referenced by `scoring_counts`.
+**`game_pieces`** — the game pieces being manipulated by alliance robots. Required on each `scoring_counts` entry (a count is always a robot scoring a piece). Piece identity only — it is *not* a rollup; to group counts, give them a shared `scoring_group`.
 ```yaml
 game_pieces:
   - id: cannonball
     display_name: "Cannonball"
 ```
 
-**`display_groups`** — rollup buckets for live counts and final points shown in the audience display. If not set on a `scoring_counts` entry, the entry's `game_piece` is used as the rollup bucket instead.
+**`scoring_groups`** — rollup buckets. A `scoring_counts` entry tagged with a `scoring_group` has its live count and points summed into that bucket — both the `ScoreSummary` point field (`summary.<Group>Points`, e.g. `summary.ShipPoints`) and the audience display. An entry with no `scoring_group` is its own bucket under its own id (so a lone element needs no wrapper group). Tiebreakers reference buckets, not raw elements.
 ```yaml
-display_groups:
+scoring_groups:
   - id: ship
     display_name: "Ship"
   - id: lair
@@ -78,7 +78,7 @@ scoring_counts:
   - id: hull
     display_name: "Hull"
     game_piece: cannonball
-    display_group: ship
+    scoring_group: ship
     phases:
       - phase: auto
         points: 4
@@ -88,14 +88,14 @@ scoring_counts:
   - id: kraken_lair
     display_name: "Kraken Lair"
     game_piece: cannonball
-    display_group: lair
+    scoring_group: lair
     phases:
       - phase: endgame
         points: 10
 ```
 - `phase` is `auto`, `teleop`, or `endgame`. An entry can declare more than one if it's scorable in several, each with an independent count and point value.
-- Every `scoring_counts` entry should set `game_piece`. `display_group` is optional — set it when you want several entries (e.g. Hull and Deck) rolled into one audience-display total (e.g. "Ship") instead of shown separately.
-- `display_name` is shown on the scoring panel. The audience display shows the resolved `display_group`/`game_piece` label instead, not this one.
+- Every `scoring_counts` entry must set `game_piece`. `scoring_group` is optional — set it when you want several entries (e.g. Hull and Deck) rolled into one total (e.g. "Ship") in both the summary and the audience display; leave it off and the entry stands alone as its own bucket.
+- `display_name` is shown on the scoring panel. The audience display shows the resolved `scoring_group` label (or, for an ungrouped entry, this `display_name`).
 - Scoring panel and referee panel never group — every entry always shows as its own raw count, organized by phase.
 
 **`statuses`** — tracks a per-robot status for an auto or endgame achievement (3 robots per alliance).
@@ -142,16 +142,16 @@ ranking_points:
     logic_func: "ComputeAutonRP"
 ```
 
-**`ranking_tiebreakers`** / **`playoff_tiebreakers`** — metric cascades for sorting rankings and breaking playoff ties. Each entry is one `metric`: a built-in (`auto_points`, `teleop_points`, `endgame_points`, `total_points`) or any `scoring_counts`/`statuses` id. Opponent major-foul count is always the first playoff tiebreaker, implicitly.
+**`ranking_tiebreakers`** / **`playoff_tiebreakers`** — metric cascades for sorting rankings and breaking playoff ties. Each entry is one `metric`: a built-in (`auto_points`, `teleop_points`, `endgame_points`, `total_points`), a **scoring-group id** (a `scoring_groups` id, or an ungrouped entry's own id), or a `statuses` id. A *grouped* element can't be tiebroken on individually — tiebreak on its group. Opponent major-foul count is always the first playoff tiebreaker, implicitly.
 ```yaml
 ranking_tiebreakers:
   - metric: total_points
   - metric: auto_points
-  - metric: kraken_lair
+  - metric: lair        # the scoring group, not a raw element
 
 playoff_tiebreakers:
-  - metric: kraken_lair
-  - metric: deck
+  - metric: lair
+  - metric: ship
   - metric: auto_points
 ```
 
@@ -160,16 +160,18 @@ playoff_tiebreakers:
 `game/custom_scoring_logic.go` (`//go:build custom`) is the one generated-adjacent file you write by hand — the generator never overwrites it. Every `logic_func` named in `ranking_points` needs a matching function here:
 
 ```go
-func ComputeXRP(score Score, opponentScore Score) bool
+func ComputeXRP(score, opponentScore Score, summary ScoreSummary) bool
 ```
+
+`summary` is this alliance's fully-computed `ScoreSummary` — prefer its generated totals (e.g. `summary.AutoPoints`, `summary.ShipPoints`) over re-deriving them from raw counts, so the RP logic can't drift from the generated point math. `score`/`opponentScore` give the raw per-element counts for thresholds the summary doesn't expose (and for cross-alliance logic). The opponent's *summary* is intentionally not passed — it would recurse back through this same logic.
 
 For the `high_seas_havoc.yaml` schema above, that would look like:
 ```go
-func ComputeAutonRP(score Score, opponentScore Score) bool {
-	return score.AutoHullCount+score.AutoDeckCount > 2
+func ComputeAutonRP(score, opponentScore Score, summary ScoreSummary) bool {
+	return summary.AutoPoints >= 20   // reference the generated total, not raw counts
 }
 
-func ComputeEndgameRP(score Score, opponentScore Score) bool {
+func ComputeEndgameRP(score, opponentScore Score, summary ScoreSummary) bool {
 	parked := 0
 	for _, p := range score.ParkStatuses {
 		if p {
