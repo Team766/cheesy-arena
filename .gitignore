@@ -29,3 +29,7 @@ _testmain.go
 .DS_Store
 static/logs
 static/img/avatars
+game/generated_*.go
+templates/generated_*.html
+static/js/generated_*.js
+cmd/generate/generated_*_test.go

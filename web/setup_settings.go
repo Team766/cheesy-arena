@@ -8,6 +8,7 @@ package web
 import (
 	"fmt"
 	"github.com/Team254/cheesy-arena/field"
+	"github.com/Team254/cheesy-arena/game"
 	"github.com/Team254/cheesy-arena/model"
 	"io"
 	"log"
@@ -178,12 +179,29 @@ func (web *Web) settingsPostHandler(w http.ResponseWriter, r *http.Request) {
 	eventSettings.CompanionMatchAbortColumn, _ = strconv.Atoi(r.PostFormValue("companionMatchAbortColumn"))
 	eventSettings.AutoDurationSec, _ = strconv.Atoi(r.PostFormValue("autoDurationSec"))
 	eventSettings.PauseDurationSec, _ = strconv.Atoi(r.PostFormValue("pauseDurationSec"))
-	eventSettings.TransitionShiftDurationSec, _ = strconv.Atoi(r.PostFormValue("transitionShiftDurationSec"))
-	eventSettings.ShiftDurationSec, _ = strconv.Atoi(r.PostFormValue("shiftDurationSec"))
+	if game.UseShifts {
+		eventSettings.TransitionShiftDurationSec, _ = strconv.Atoi(r.PostFormValue("transitionShiftDurationSec"))
+		eventSettings.ShiftDurationSec, _ = strconv.Atoi(r.PostFormValue("shiftDurationSec"))
+	} else {
+		eventSettings.TransitionShiftDurationSec, _ = strconv.Atoi(r.PostFormValue("teleopDurationSec"))
+		eventSettings.ShiftDurationSec = 0
+	}
 	eventSettings.EndgameDurationSec, _ = strconv.Atoi(r.PostFormValue("endgameDurationSec"))
-	eventSettings.EnergizedBonusThreshold, _ = strconv.Atoi(r.PostFormValue("energizedBonusThreshold"))
-	eventSettings.SuperchargedBonusThreshold, _ = strconv.Atoi(r.PostFormValue("superchargedBonusThreshold"))
-	eventSettings.TraversalBonusThreshold, _ = strconv.Atoi(r.PostFormValue("traversalBonusThreshold"))
+	if !game.CustomGameMode {
+		eventSettings.EnergizedBonusThreshold, _ = strconv.Atoi(r.PostFormValue("energizedBonusThreshold"))
+		eventSettings.SuperchargedBonusThreshold, _ = strconv.Atoi(r.PostFormValue("superchargedBonusThreshold"))
+		eventSettings.TraversalBonusThreshold, _ = strconv.Atoi(r.PostFormValue("traversalBonusThreshold"))
+	}
+
+	// In custom game mode, partner integrations are not supported.
+	// Force their settings off regardless of what the form submitted.
+	if game.CustomGameMode {
+		eventSettings.TbaDownloadEnabled = false
+		eventSettings.TbaPublishingEnabled = false
+		eventSettings.NexusEnabled = false
+		eventSettings.NexusAutoQueueEnabled = false
+		eventSettings.CompanionAddress = ""
+	}
 
 	err := web.arena.Database.UpdateEventSettings(eventSettings)
 	if err != nil {
@@ -510,7 +528,18 @@ func (web *Web) renderSettingsWithStatus(
 		ErrorMessage      string
 		ActiveSettingsTab string
 		NexusBaseUrl      string
-	}{web.arena.EventSettings, errorMessage, activeSettingsTab, web.arena.NexusClient.BaseUrl}
+		CustomGameMode    bool
+		CustomGameName    string
+		UseShifts         bool
+	}{
+		web.arena.EventSettings,
+		errorMessage,
+		activeSettingsTab,
+		web.arena.NexusClient.BaseUrl,
+		game.CustomGameMode,
+		game.CustomGameName,
+		game.UseShifts,
+	}
 	if statusCode != http.StatusOK {
 		w.WriteHeader(statusCode)
 	}
