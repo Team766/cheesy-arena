@@ -1,11 +1,8 @@
-// Copyright 2014 Team 254. All Rights Reserved.
-// Author: pat@patfairbank.com (Patrick Fairbank)
-//go:build !custom
+//go:build custom
 
 package model
 
 import (
-	"github.com/Team254/cheesy-arena/game"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -29,8 +26,7 @@ func TestMatchResultCrud(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, matchResult, matchResult2)
 
-	matchResult.BlueScore.EndgameTowerStatuses =
-		[3]game.TowerStatus{game.TowerLevel1, game.TowerNone, game.TowerLevel2}
+	matchResult.RedScore.PlayoffDq = true
 	assert.Nil(t, db.UpdateMatchResult(matchResult))
 	matchResult2, err = db.GetMatchResultForMatch(254)
 	assert.Nil(t, err)

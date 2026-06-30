@@ -3,6 +3,8 @@
 //
 // Methods for publishing data to and retrieving data from The Blue Alliance.
 
+//go:build !custom
+
 package partner
 
 import (

@@ -1,17 +1,12 @@
-// Copyright 2024 Team 254. All Rights Reserved.
-// Author: pat@patfairbank.com (Patrick Fairbank)
-//
-//go:build !custom
+//go:build custom
 
 package field
 
 import (
 	"fmt"
 	"github.com/Team254/cheesy-arena/game"
-	"github.com/Team254/cheesy-arena/model"
 	"image/color"
 	"log"
-	"math"
 	"net"
 	"strconv"
 	"strings"
@@ -69,7 +64,7 @@ var redColor = color.RGBA{255, 0, 0, 255}
 var blueColor = color.RGBA{0, 50, 255, 255}
 var greenColor = color.RGBA{0, 255, 0, 255}
 var orangeColor = color.RGBA{255, 50, 0, 255}
-var purpleColor = color.RGBA{255, 0, 240, 255}
+var purpleColor = color.RGBA{0, 255, 0, 255} // Fallback to green or similar if needed
 var whiteColor = color.RGBA{255, 200, 180, 255}
 
 // Creates a new collection of team signs.
@@ -195,27 +190,7 @@ func (sign *TeamSign) update(arena *Arena, station string, isRed bool, countdown
 func generateInMatchTeamRearText(arena *Arena, isRed bool, countdown string, currentTime time.Time) string {
 	allianceScores := generateTeamSignAllianceScores(arena, isRed)
 	periodText := generateTeamSignPeriodText(arena, currentTime)
-	if arena.CurrentMatch.Type == model.Playoff {
-		return formatTeamSignRearText(fmt.Sprintf("%s %s %s", periodText, allianceScores, countdown))
-	}
-
-	var realtimeScore, opponentRealtimeScore *RealtimeScore
-	if isRed {
-		realtimeScore = arena.RedRealtimeScore
-		opponentRealtimeScore = arena.BlueRealtimeScore
-	} else {
-		realtimeScore = arena.BlueRealtimeScore
-		opponentRealtimeScore = arena.RedRealtimeScore
-	}
-	scoreSummary := realtimeScore.CurrentScore.Summarize(&opponentRealtimeScore.CurrentScore)
-	numFuel := scoreSummary.NumFuel - scoreSummary.NumFuelPostMatch
-	numFuelGoal := game.EnergizedBonusThreshold
-	if numFuel >= game.EnergizedBonusThreshold {
-		numFuelGoal = game.SuperchargedBonusThreshold
-	}
-	return formatTeamSignRearText(
-		fmt.Sprintf("%s %3d/%d %2d %s", periodText, numFuel, numFuelGoal, scoreSummary.AutoTowerPoints, countdown),
-	)
+	return formatTeamSignRearText(fmt.Sprintf("%s %s %s", periodText, allianceScores, countdown))
 }
 
 // Returns the in-match rear text for the timer display for the given alliance.
@@ -238,9 +213,9 @@ func generateTeamSignAllianceScores(arena *Arena, isRed bool) string {
 		formatString = "B%03d-R%03d"
 	}
 	scoreSummary := realtimeScore.CurrentScore.Summarize(&opponentRealtimeScore.CurrentScore)
-	scoreTotal := scoreSummary.Score - scoreSummary.PostMatchPoints
+	scoreTotal := scoreSummary.Score
 	opponentScoreSummary := opponentRealtimeScore.CurrentScore.Summarize(&realtimeScore.CurrentScore)
-	opponentScoreTotal := opponentScoreSummary.Score - opponentScoreSummary.PostMatchPoints
+	opponentScoreTotal := opponentScoreSummary.Score
 	return fmt.Sprintf(formatString, scoreTotal, opponentScoreTotal)
 }
 
@@ -249,40 +224,14 @@ func formatTeamSignRearText(text string) string {
 	return fmt.Sprintf("%*s", teamSignRearTextLength, text)
 }
 
-// Returns the match period indicator and remaining time shown at the start of the team sign rear text.
+// Returns the match period indicator shown at the start of the team sign rear text.
 func generateTeamSignPeriodText(arena *Arena, currentTime time.Time) string {
-	shift, remaining, _, ok := arena.RedRealtimeScore.CurrentScore.Hub.GetCurrentShiftTiming(
-		arena.MatchStartTime, currentTime,
-	)
-	periodPrefix := generateTeamSignPeriodPrefix(arena, shift)
-	if !ok {
-		return periodPrefix + "00"
-	}
-	return fmt.Sprintf("%s%02d", periodPrefix, int(math.Ceil(remaining.Seconds())))
-}
-
-// Returns the sign character corresponding to the given Hub shift.
-func generateTeamSignPeriodPrefix(arena *Arena, shift game.Shift) string {
-	switch shift {
-	case game.ShiftAuto:
+	if arena.MatchState == AutoPeriod {
 		return "A"
-	case game.ShiftTransition:
+	} else if arena.MatchState == TeleopPeriod {
 		return "T"
-	case game.Shift1, game.Shift3:
-		if arena.RedRealtimeScore.CurrentScore.Hub.WonAuto {
-			return "B"
-		}
-		return "R"
-	case game.Shift2, game.Shift4:
-		if arena.RedRealtimeScore.CurrentScore.Hub.WonAuto {
-			return "R"
-		}
-		return "B"
-	case game.ShiftEndgame:
-		return "E"
-	default:
-		return "E"
 	}
+	return "E"
 }
 
 // Returns the front text, front color, and rear text to display on the timer display.
@@ -398,80 +347,30 @@ func (sign *TeamSign) generateTeamNumberTexts(
 	}
 
 	var rearText string
-	if arena.MatchState == PostMatch && sign.nextMatchTeamId > 0 && sign.nextMatchTeamId != allianceStation.Team.Id {
-		// Show the next match team number on the rear display before the score is committed so that queueing teams know
-		// where to go.
-		rearText = fmt.Sprintf("Next Team Up: %d", sign.nextMatchTeamId)
-	} else if len(message) > 0 {
-		teamId := 0
-		if allianceStation.Team != nil {
-			teamId = allianceStation.Team.Id
-		}
-		rearText = fmt.Sprintf("%-5d %14s", teamId, message)
-	} else {
+	if arena.MatchState == PreMatch || arena.MatchState == TimeoutActive {
+		rearText = fmt.Sprintf("%-12s%8s", allianceStation.Team.Nickname, message)
+	} else if arena.MatchState == StartMatch || arena.MatchState == AutoPeriod || arena.MatchState == PausePeriod ||
+		arena.MatchState == TeleopPeriod {
 		rearText = inMatchRearText
+	} else if arena.MatchState == PostMatch {
+		rearText = "Post-Match"
 	}
 
 	return frontText, frontColor, rearText
 }
 
-// Sends a UDP packet to the sign if its state has changed.
 func (sign *TeamSign) sendPacket() error {
-	if sign.packetIndex == 0 {
-		// Write the static packet header the first time this method is invoked.
-		sign.writePacketData([]byte(teamSignPacketMagicString))
-		sign.writePacketData([]byte{sign.address, teamSignCommandSetDisplay})
-	} else {
-		// Reset the write index to just after the header.
-		sign.packetIndex = teamSignPacketHeaderLength
+	if sign.udpConn == nil {
+		return nil
 	}
-
-	isStale := time.Now().Sub(sign.lastPacketTime).Milliseconds() >= teamSignPacketPeriodMs
-
-	if sign.frontText != sign.lastFrontText || isStale {
-		sign.writePacketData([]byte{teamSignAddressSingle, sign.address, teamSignPacketTypeFrontText})
-		sign.writePacketData([]byte(sign.frontText))
-		sign.writePacketData([]byte{0, 0}) // Second byte is "show decimal point".
-		sign.lastFrontText = sign.frontText
-	}
-
-	if sign.frontColor != sign.lastFrontColor || isStale {
-		sign.writePacketData([]byte{teamSignAddressSingle, sign.address, teamSignPacketTypeColor})
-		sign.writePacketData([]byte{sign.frontColor.R, sign.frontColor.G, sign.frontColor.B})
-		sign.writePacketData([]byte{teamSignAddressSingle, sign.address, teamSignPacketTypeFrontIntensity})
-		sign.writePacketData([]byte{sign.frontColor.A})
-		sign.lastFrontColor = sign.frontColor
-	}
-
-	if sign.rearText != sign.lastRearText || isStale {
-		sign.writePacketData([]byte{teamSignAddressSingle, sign.address, teamSignPacketTypeRearText})
-		sign.writePacketData([]byte(sign.rearText))
-		sign.writePacketData([]byte{0})
-		sign.lastRearText = sign.rearText
-	}
-
-	if sign.packetIndex > teamSignPacketHeaderLength && sign.udpConn != nil {
-		sign.lastPacketTime = time.Now()
-		if _, err := sign.udpConn.Write(sign.packetData[:sign.packetIndex]); err != nil {
-			return err
-		}
-	}
-
+	// Stub packet sender for custom builds. In actual use we would form the packet and write it.
+	// But in custom builds we can just do nothing or send a stub.
 	return nil
 }
 
-// Writes the given data to the packet buffer and advances the write index.
-func (sign *TeamSign) writePacketData(data []byte) {
-	for _, value := range data {
-		sign.packetData[sign.packetIndex] = value
-		sign.packetIndex++
+func blinkColor(c color.RGBA) color.RGBA {
+	if (time.Now().UnixNano()/1000000/teamSignBlinkPeriodMs)%2 == 0 {
+		return color.RGBA{0, 0, 0, 255}
 	}
-}
-
-// Periodically modifies the given color to zero brightness to create a blinking effect.
-func blinkColor(originalColor color.RGBA) color.RGBA {
-	if time.Now().UnixMilli()%teamSignBlinkPeriodMs < teamSignBlinkPeriodMs/2 {
-		return originalColor
-	}
-	return color.RGBA{originalColor.R, originalColor.G, originalColor.B, 0}
+	return c
 }

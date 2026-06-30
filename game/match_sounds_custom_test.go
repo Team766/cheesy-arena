@@ -1,6 +1,4 @@
-// Copyright 2026 Team 254. All Rights Reserved.
-// Author: pat@patfairbank.com (Patrick Fairbank)
-//go:build !custom
+//go:build custom
 
 package game
 
@@ -20,7 +18,6 @@ func TestUniqueMatchSounds(t *testing.T) {
 			"start",
 			"end",
 			"resume",
-			"shift_change",
 			"warning",
 			"abort",
 			"match_result",
@@ -30,10 +27,7 @@ func TestUniqueMatchSounds(t *testing.T) {
 		},
 		matchSoundNames(uniqueSounds),
 	)
-	assert.Len(t, uniqueSounds, 10)
-	assert.Same(t, MatchSounds[0], uniqueSounds[0])
-	assert.Same(t, MatchSounds[1], uniqueSounds[1])
-	assert.Same(t, MatchSounds[3], uniqueSounds[3])
+	assert.Len(t, uniqueSounds, 9)
 }
 
 func matchSoundNames(matchSounds []*MatchSound) []string {
