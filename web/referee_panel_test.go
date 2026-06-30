@@ -5,6 +5,7 @@ package web
 
 import (
 	"github.com/Team254/cheesy-arena/field"
+	"github.com/Team254/cheesy-arena/game"
 	"github.com/Team254/cheesy-arena/model"
 	"github.com/Team254/cheesy-arena/websocket"
 	gorillawebsocket "github.com/gorilla/websocket"
@@ -18,12 +19,17 @@ func TestRefereePanel(t *testing.T) {
 
 	recorder := web.getHttpResponse("/panels/referee")
 	assert.Equal(t, 200, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "Referee Panel - Untitled Event - Cheesy Arena")
-	assert.Contains(t, recorder.Body.String(), "Auto Tower")
-	assert.Contains(t, recorder.Body.String(), "Endgame Tower")
-	assert.NotContains(t, recorder.Body.String(), "Leave")
-	assert.NotContains(t, recorder.Body.String(), "Coral")
-	assert.NotContains(t, recorder.Body.String(), "Algae")
+	if game.CustomGameMode {
+		assert.Contains(t, recorder.Body.String(), "Custom Referee Panel")
+		assert.NotContains(t, recorder.Body.String(), "Auto Tower")
+	} else {
+		assert.Contains(t, recorder.Body.String(), "Referee Panel - Untitled Event - Cheesy Arena")
+		assert.Contains(t, recorder.Body.String(), "Auto Tower")
+		assert.Contains(t, recorder.Body.String(), "Endgame Tower")
+		assert.NotContains(t, recorder.Body.String(), "Leave")
+		assert.NotContains(t, recorder.Body.String(), "Coral")
+		assert.NotContains(t, recorder.Body.String(), "Algae")
+	}
 }
 
 func TestRefereePanelWebsocket(t *testing.T) {
