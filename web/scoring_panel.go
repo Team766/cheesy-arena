@@ -1,6 +1,7 @@
 // Copyright 2014 Team 254. All Rights Reserved.
 // Author: pat@patfairbank.com (Patrick Fairbank)
-//
+//go:build !custom
+
 // Web handlers for scoring interface.
 
 package web
@@ -46,7 +47,11 @@ func (web *Web) scoringPanelHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	template, err := web.parseFiles("templates/scoring_panel.html", "templates/base.html")
+	scoringPanelTemplate := "templates/scoring_panel.html"
+	if game.CustomGameMode {
+		scoringPanelTemplate = "templates/generated_scoring_panel.html"
+	}
+	template, err := web.parseFiles(scoringPanelTemplate, "templates/base.html")
 	if err != nil {
 		handleWebErr(w, err)
 		return
