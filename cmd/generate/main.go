@@ -271,6 +271,9 @@ func validateGameYAML(yamlData *GameYAML) []string {
 				validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s.phases[%d]: points must be > 0", i, sc.ID, j))
 			}
 		}
+		if seenPhases["teleop"] && seenPhases["endgame"] {
+			validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: cannot be scored in both teleop and endgame (teleop play continues through endgame)", i, sc.ID))
+		}
 	}
 
 	// statuses

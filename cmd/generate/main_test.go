@@ -94,6 +94,13 @@ func TestValidationErrors(t *testing.T) {
 			expectedError: "points must be > 0",
 		},
 		{
+			name: "scoring count in both teleop and endgame rejected",
+			modify: func(y *GameYAML) {
+				y.ScoringCounts[0].Phases = []PhasePoints{{Phase: "teleop", Points: 2}, {Phase: "endgame", Points: 3}}
+			},
+			expectedError: "cannot be scored in both teleop and endgame",
+		},
+		{
 			name: "unknown scoring_group reference",
 			modify: func(y *GameYAML) {
 				y.ScoringCounts[0].ScoringGroup = "nonexistent"
