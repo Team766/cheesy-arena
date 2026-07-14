@@ -188,6 +188,53 @@ func TestValidationErrors(t *testing.T) {
 			},
 			expectedError: "duplicate metric 'total_points'",
 		},
+		{
+			name: "duplicate playoff tiebreaker metric",
+			modify: func(y *GameYAML) {
+				y.PlayoffTiebreakers = append(y.PlayoffTiebreakers, Tiebreaker{Metric: "total_points"})
+			},
+			expectedError: "playoff_tiebreakers",
+		},
+		{
+			name: "scoring count ids that CamelCase to the same identifier",
+			modify: func(y *GameYAML) {
+				// "structure1Level1" -> "Structure1Level1", same as the default's "structure1_level1".
+				y.ScoringCounts = append(y.ScoringCounts, ScoringCount{ID: "structure1Level1", Phases: []PhasePoints{{Phase: "auto", Points: 1}}})
+			},
+			expectedError: "colliding with scoring count",
+		},
+		{
+			name: "status ids that CamelCase to the same identifier",
+			modify: func(y *GameYAML) {
+				y.Statuses = append(y.Statuses, Status{ID: "Park", Phases: []PhasePoints{{Phase: "endgame", Points: 2}}})
+			},
+			expectedError: "colliding with status",
+		},
+		{
+			name: "enum status first value scores points",
+			modify: func(y *GameYAML) {
+				y.Statuses = append(y.Statuses, Status{ID: "gizmo", Phases: []PhasePoints{{Phase: "endgame", Points: 1}}, Values: []StatusValue{
+					{ID: "low", Points: 2}, {ID: "high", Points: 5},
+				}})
+			},
+			expectedError: "first enum value 'low' must have points: 0",
+		},
+		{
+			name: "id resolves to the built-in RankingPoints field",
+			modify: func(y *GameYAML) {
+				y.Statuses = append(y.Statuses, Status{ID: "ranking", Phases: []PhasePoints{{Phase: "endgame", Points: 1}}})
+			},
+			expectedError: "RankingPoints collides with the built-in RankingFields field",
+		},
+		{
+			name: "PointsVal consts collide across a count and a status",
+			modify: func(y *GameYAML) {
+				// count "foo" in auto -> FooAutoPointsVal; bool status "foo_auto" -> FooAutoPointsVal.
+				y.ScoringCounts = append(y.ScoringCounts, ScoringCount{ID: "foo", GamePiece: y.GamePieces[0].ID, Phases: []PhasePoints{{Phase: "auto", Points: 1}}})
+				y.Statuses = append(y.Statuses, Status{ID: "foo_auto", Phases: []PhasePoints{{Phase: "endgame", Points: 2}}})
+			},
+			expectedError: "generated const FooAutoPointsVal collides",
+		},
 	}
 
 	for _, tt := range tests {

@@ -155,7 +155,7 @@ playoff_tiebreakers:
 func ComputeXRP(score, opponentScore Score, summary ScoreSummary) bool
 ```
 
-`summary` is this alliance's fully-computed `ScoreSummary` — prefer its generated totals (e.g. `summary.AutoPoints`, `summary.Structure1Points`) over re-deriving them from raw counts, so the RP logic can't drift from the generated point math. `score`/`opponentScore` give the raw per-element counts for thresholds the summary doesn't expose (and for cross-alliance logic). The opponent's *summary* is intentionally not passed — it would recurse back through this same logic.
+`summary` carries this alliance's point totals — prefer its generated totals (e.g. `summary.AutoPoints`, `summary.Structure1Points`) over re-deriving them from raw counts, so the RP logic can't drift from the generated point math. Note the ranking-point fields (`summary.<X>RankingPoint`) and `summary.BonusRankingPoints` are **not yet populated** when these funcs run — they're computed from the funcs' results — so don't read them here. `score`/`opponentScore` give the raw per-element counts for thresholds the summary doesn't expose (and for cross-alliance logic). The opponent's *summary* is intentionally not passed — it would recurse back through this same logic.
 
 For the `custom_game.yaml` schema above, that would look like:
 ```go
