@@ -170,6 +170,14 @@ func ComputeEndgameRP(score, opponentScore Score, summary ScoreSummary) bool {
 
 **Status helpers.** For every status the generator emits `Any<Status>Status` / `Count<Status>Status` methods on `Score`, so you don't hand-roll the three-robot loop. A bool status takes no argument (`score.AnyParkStatus()`, `score.CountParkStatus()`); an **enum** status takes an `atLeast` threshold and counts robots whose state is at least that value, compared by **declared value order** (list your enum values weakest-first): `score.CountMusterStatus(MusterPartial) >= 2` means "at least two robots mustered partially or better."
 
+**Opponent-foul helper.** To award a bonus RP when the *opponent* commits specific fouls (the standard FRC pattern), call `HasRankingPointFoul` on the opponent's score with the rule numbers:
+```go
+func ComputeSafetyRP(score, opponentScore Score, summary ScoreSummary) bool {
+	return opponentScore.HasRankingPointFoul("G418", "G428")
+}
+```
+A foul only counts when its rule is flagged `is_ranking_point` in [`game/custom_rules.go`](#custom-rules), so keep that flag in sync with the numbers you pass. (This helper is committed library code in `game/custom_foul_helpers.go`, not generated.)
+
 Field names (`AutoStructure1Level1Count`, `ParkStatuses`, etc.) are derived from each `scoring_counts`/`statuses` id — run the generator first so they exist. Renaming or removing an entry means updating this file by hand to match. To make that easy to get right, `go generate` validates this file against the current config: when a `logic_func` named in `ranking_points` has no matching function here, it prints a **copy-pasteable stub** for it followed by a reference of the data available for the current config (the `score`/`opponentScore` count fields, the status helpers with their enum values, and the `summary` point totals) — so you can start without hunting through the generated Go. It also flags any `score`/`opponentScore`/`summary` field access that isn't a generated field — pointing at the line and suggesting the closest current field (e.g. *"`score.AutoStructure1Level1Count` is not a field generated from custom_game.yaml — did you mean `AutoShelfL1Count`?"*). It's a best-effort aid over direct parameter accesses; anything it can't see (a local alias, a helper function) still surfaces at `go build -tags custom`, just as a terser compiler error.
 
 ### Custom Rules

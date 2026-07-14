@@ -157,6 +157,7 @@ func missingLogicFuncMessage(y *GameYAML, logicPath string, missing []RankingPoi
 		b.WriteString("\n  score / opponentScore status helpers: " + strings.Join(helpers, "; "))
 	}
 	b.WriteString("\n  summary point totals: " + strings.Join(summaryHintFields(y), ", "))
+	b.WriteString("\n  opponent fouls (bonus RP): opponentScore.HasRankingPointFoul(ruleNumbers ...string)")
 	return b.String()
 }
 

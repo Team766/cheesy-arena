@@ -345,6 +345,7 @@ func TestValidateCustomScoringLogic(t *testing.T) {
 		assert.Contains(t, errs[0], "Any"+"ClimbStatus(atLeast ClimbStatus)")
 		assert.Contains(t, errs[0], "ClimbNone")
 		assert.Contains(t, errs[0], "RackPoints")
+		assert.Contains(t, errs[0], "HasRankingPointFoul")
 	})
 
 	t.Run("missing file with no ranking points is fine", func(t *testing.T) {
