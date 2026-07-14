@@ -8,6 +8,11 @@ var websocket;
 let alliance;
 let committed = false;
 
+// Set to true by generated_scoring_panel.js when it loads (custom game mode only). Explicit
+// equivalent of the Go-side "if game.CustomGameMode" branch, rather than feature-detecting via
+// typeof on a function that may not be declared at all in the FRC build.
+let IS_CUSTOM_GAME_MODE = false;
+
 // True when scoring controls in general should be available
 let scoringAvailable = false;
 // True when the commit button should be available
@@ -177,7 +182,11 @@ $(function () {
       handleMatchTime(event.data);
     },
     realtimeScore: function (event) {
-      handleRealtimeScore(event.data);
+      if (IS_CUSTOM_GAME_MODE) {
+        handleRealtimeScoreGenerated(event.data);
+      } else {
+        handleRealtimeScore(event.data);
+      }
     },
     resetLocalState: function (event) {
       resetLocalState();

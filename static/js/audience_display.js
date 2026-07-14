@@ -12,6 +12,11 @@ var websocket;
 let transitionMap;
 const transitionQueue = [];
 let transitionInProgress = false;
+
+// Set to true by generated_audience_display.js when it loads (custom game mode only). Explicit
+// equivalent of the Go-side "if game.CustomGameMode" branch, rather than feature-detecting via
+// typeof on a function that may not be declared at all in the FRC build.
+let IS_CUSTOM_GAME_MODE = false;
 let currentScreen = "blank";
 let redSide;
 let blueSide;
@@ -762,10 +767,18 @@ $(function () {
       handlePlaySound(event.data);
     },
     realtimeScore: function (event) {
-      handleRealtimeScore(event.data);
+      if (IS_CUSTOM_GAME_MODE) {
+        handleRealtimeScoreGenerated(event.data);
+      } else {
+        handleRealtimeScore(event.data);
+      }
     },
     scorePosted: function (event) {
-      handleScorePosted(event.data);
+      if (IS_CUSTOM_GAME_MODE) {
+        handleScorePostedGenerated(event.data);
+      } else {
+        handleScorePosted(event.data);
+      }
     },
   });
 

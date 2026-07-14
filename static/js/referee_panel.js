@@ -9,6 +9,11 @@ let blueFoulsHashCode = 0;
 let scoreIsReady = false;
 let isPostMatch = false;
 
+// Set to true by generated_referee_panel.js when it loads (custom game mode only). Explicit
+// equivalent of the Go-side "if game.CustomGameMode" branch, rather than feature-detecting via
+// typeof on a function that may not be declared at all in the FRC build.
+let IS_CUSTOM_GAME_MODE = false;
+
 // Sends the foul to the server to add it to the list.
 const addFoul = function (alliance, isMajor) {
   websocket.send("addFoul", {Alliance: alliance, IsMajor: isMajor});
@@ -169,12 +174,16 @@ const handleRealtimeScore = function (data) {
     }
 
     let scoreRoot = `${alliance}ScoreSummary`;
-    setTowerStatus(`#${scoreRoot} .team-1-auto-tower`, score.AutoTowerStatuses[0]);
-    setTowerStatus(`#${scoreRoot} .team-2-auto-tower`, score.AutoTowerStatuses[1]);
-    setTowerStatus(`#${scoreRoot} .team-3-auto-tower`, score.AutoTowerStatuses[2]);
-    setTowerStatus(`#${scoreRoot} .team-1-endgame-tower`, score.EndgameTowerStatuses[0]);
-    setTowerStatus(`#${scoreRoot} .team-2-endgame-tower`, score.EndgameTowerStatuses[1]);
-    setTowerStatus(`#${scoreRoot} .team-3-endgame-tower`, score.EndgameTowerStatuses[2]);
+    if (IS_CUSTOM_GAME_MODE) {
+      updateScoreSummaryGenerated(scoreRoot, score);
+    } else {
+      setTowerStatus(`#${scoreRoot} .team-1-auto-tower`, score.AutoTowerStatuses[0]);
+      setTowerStatus(`#${scoreRoot} .team-2-auto-tower`, score.AutoTowerStatuses[1]);
+      setTowerStatus(`#${scoreRoot} .team-3-auto-tower`, score.AutoTowerStatuses[2]);
+      setTowerStatus(`#${scoreRoot} .team-1-endgame-tower`, score.EndgameTowerStatuses[0]);
+      setTowerStatus(`#${scoreRoot} .team-2-endgame-tower`, score.EndgameTowerStatuses[1]);
+      setTowerStatus(`#${scoreRoot} .team-3-endgame-tower`, score.EndgameTowerStatuses[2]);
+    }
   }
 }
 

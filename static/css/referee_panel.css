@@ -279,3 +279,17 @@ h3 {
 #scoreSummary .tower-status[data-status="3"] {
   background-color: #2a8c55;
 }
+
+#scoreSummary .status-badge {
+  min-width: 4.8vw;
+  padding: 0.05vw 0.2vw;
+  border-radius: 0.25vw;
+  color: #fff;
+  font-weight: bold;
+  white-space: nowrap;
+  background-color: #555;
+}
+
+#scoreSummary .status-badge[data-active="true"] {
+  background-color: #2a8c55;
+}
