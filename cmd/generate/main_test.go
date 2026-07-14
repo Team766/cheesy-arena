@@ -32,6 +32,32 @@ func TestValidateTemplates(t *testing.T) {
 	}
 }
 
+// testGameYAML is a small, self-contained, valid config the validation tests mutate. Using it
+// instead of the shipped game/custom_game.yaml keeps these unit tests independent of whichever game
+// is configured — a user who swaps in their own yaml doesn't break the generator's own tests.
+func testGameYAML() *GameYAML {
+	return &GameYAML{
+		Game:          GameInfo{Name: "Test Game"},
+		Fouls:         FoulConfig{MinorFoulPoints: 5, MajorFoulPoints: 15},
+		GamePieces:    []GamePiece{{ID: "cube", DisplayName: "Cube"}},
+		ScoringGroups: []ScoringGroup{{ID: "rack", DisplayName: "Rack"}},
+		ScoringCounts: []ScoringCount{
+			{ID: "rack_low", DisplayName: "Rack Low", GamePiece: "cube", ScoringGroup: "rack",
+				Phases: []PhasePoints{{Phase: "auto", Points: 3}, {Phase: "teleop", Points: 2}}},
+			{ID: "rack_high", DisplayName: "Rack High", GamePiece: "cube", ScoringGroup: "rack",
+				Phases: []PhasePoints{{Phase: "teleop", Points: 5}}},
+		},
+		Statuses: []Status{
+			{ID: "park", DisplayName: "Park", Phases: []PhasePoints{{Phase: "endgame", Points: 2}}},
+			{ID: "climb", DisplayName: "Climb", Phases: []PhasePoints{{Phase: "endgame"}}, Values: []StatusValue{
+				{ID: "none", DisplayName: "None", Points: 0}, {ID: "high", DisplayName: "High", Points: 5}}},
+		},
+		RPs:                []RankingPoint{{ID: "auto_rp", DisplayName: "Auto RP", LogicFunc: "ComputeAutoRp"}},
+		RankingTiebreakers: []Tiebreaker{{Metric: "total_points"}, {Metric: "auto_points"}},
+		PlayoffTiebreakers: []Tiebreaker{{Metric: "auto_points"}, {Metric: "total_points"}},
+	}
+}
+
 func TestValidationErrors(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -157,10 +183,10 @@ func TestValidationErrors(t *testing.T) {
 		{
 			name: "duplicate id across sections",
 			modify: func(y *GameYAML) {
-				// Duplicate leave in scoring counts
-				y.ScoringCounts = append(y.ScoringCounts, ScoringCount{ID: "leave", GamePiece: y.GamePieces[0].ID, Phases: []PhasePoints{{Phase: "auto", Points: 5}}})
+				// A scoring count reusing the status id "park".
+				y.ScoringCounts = append(y.ScoringCounts, ScoringCount{ID: "park", GamePiece: y.GamePieces[0].ID, Phases: []PhasePoints{{Phase: "auto", Points: 5}}})
 			},
-			expectedError: "duplicate id: 'leave'",
+			expectedError: "duplicate id: 'park'",
 		},
 		{
 			name: "id collides with a built-in summary field",
@@ -173,11 +199,11 @@ func TestValidationErrors(t *testing.T) {
 		{
 			name: "two ids generate the same summary field",
 			modify: func(y *GameYAML) {
-				// "Structure1" CamelCases to the same field as scoring_group "structure1"
-				// (-> Structure1Points), yet is a distinct raw id, so the dup-id check misses it.
-				y.Statuses = append(y.Statuses, Status{ID: "Structure1", Phases: []PhasePoints{{Phase: "auto", Points: 3}}})
+				// "Rack" CamelCases to the same field as scoring_group "rack" (-> RackPoints), yet is a
+				// distinct raw id, so the dup-id check misses it.
+				y.Statuses = append(y.Statuses, Status{ID: "Rack", Phases: []PhasePoints{{Phase: "auto", Points: 3}}})
 			},
-			expectedError: "collides with scoring group 'structure1'",
+			expectedError: "collides with scoring group 'rack'",
 		},
 		{
 			name: "duplicate ranking tiebreaker metric",
@@ -198,8 +224,8 @@ func TestValidationErrors(t *testing.T) {
 		{
 			name: "scoring count ids that CamelCase to the same identifier",
 			modify: func(y *GameYAML) {
-				// "structure1Level1" -> "Structure1Level1", same as the default's "structure1_level1".
-				y.ScoringCounts = append(y.ScoringCounts, ScoringCount{ID: "structure1Level1", Phases: []PhasePoints{{Phase: "auto", Points: 1}}})
+				// "rackLow" -> "RackLow", same as the fixture's "rack_low".
+				y.ScoringCounts = append(y.ScoringCounts, ScoringCount{ID: "rackLow", Phases: []PhasePoints{{Phase: "auto", Points: 1}}})
 			},
 			expectedError: "colliding with scoring count",
 		},
@@ -239,13 +265,9 @@ func TestValidationErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Start with a clean copy of default template
-			data, err := os.ReadFile("../../game/custom_game.yaml")
-			assert.Nil(t, err)
-
-			var yamlData GameYAML
-			err = yaml.Unmarshal(data, &yamlData)
-			assert.Nil(t, err)
+			// Start from a fresh copy of the self-contained fixture (a new one per case, so appends
+			// in one case don't leak into another).
+			yamlData := *testGameYAML()
 
 			tt.modify(&yamlData)
 
@@ -265,12 +287,9 @@ func TestValidationErrors(t *testing.T) {
 }
 
 func TestValidateCustomScoringLogic(t *testing.T) {
-	// Base config: the default template, whose ranking_points name ComputeAutonRP/ScoringRP/EndgameRP
-	// and whose Score exposes AutoStructure1Level1Count etc.
-	data, err := os.ReadFile("../../game/custom_game.yaml")
-	assert.Nil(t, err)
-	var base GameYAML
-	assert.Nil(t, yaml.Unmarshal(data, &base))
+	// Self-contained fixture: one ranking_point (ComputeAutoRp), a Score exposing AutoRackLowCount /
+	// TeleopRackHighCount / ParkStatuses / ClimbStatuses, and the usual summary point fields.
+	base := testGameYAML()
 
 	writeLogic := func(t *testing.T, content string) string {
 		path := filepath.Join(t.TempDir(), "custom_scoring_logic.go")
@@ -278,55 +297,52 @@ func TestValidateCustomScoringLogic(t *testing.T) {
 		return path
 	}
 
-	// A logic file with all three declared logic funcs and the given body for ComputeAutonRP.
-	logicWith := func(autonBody string) string {
+	// A logic file defining the fixture's one logic func with the given body.
+	logicWith := func(body string) string {
 		return "package game\n" +
-			"func ComputeAutonRP(score, opponentScore Score, summary ScoreSummary) bool {\n" + autonBody + "\n}\n" +
-			"func ComputeScoringRP(score, opponentScore Score, summary ScoreSummary) bool { return false }\n" +
-			"func ComputeEndgameRP(score, opponentScore Score, summary ScoreSummary) bool { return false }\n"
+			"func ComputeAutoRp(score, opponentScore Score, summary ScoreSummary) bool {\n" + body + "\n}\n"
 	}
 
-	t.Run("valid logic matching default config", func(t *testing.T) {
-		logic, err := os.ReadFile("../../game/custom_scoring_logic.go")
-		assert.Nil(t, err)
-		assert.Empty(t, validateCustomScoringLogic(&base, writeLogic(t, string(logic))))
+	t.Run("valid logic matching the config", func(t *testing.T) {
+		path := writeLogic(t, logicWith(
+			"\tparked := 0\n\tfor _, p := range score.ParkStatuses {\n\t\tif p {\n\t\t\tparked++\n\t\t}\n\t}\n"+
+				"\treturn parked >= 2 && score.AutoRackLowCount > 0 && summary.AutoPoints >= 9"))
+		assert.Empty(t, validateCustomScoringLogic(base, path))
 	})
 
 	t.Run("no false positives on method calls and non-param selectors", func(t *testing.T) {
 		path := writeLogic(t, logicWith(
 			"\tfor _, foul := range score.Fouls {\n\t\t_ = foul.PointValue()\n\t}\n\treturn summary.AutoPoints >= 9"))
-		assert.Empty(t, validateCustomScoringLogic(&base, path))
+		assert.Empty(t, validateCustomScoringLogic(base, path))
 	})
 
 	t.Run("obsolete Score field with suggestion", func(t *testing.T) {
 		// A near-miss typo of a real field should be flagged and suggest the real field.
-		path := writeLogic(t, logicWith("\treturn score.AutoStructure1Level1Kount > 2"))
-		errs := validateCustomScoringLogic(&base, path)
+		path := writeLogic(t, logicWith("\treturn score.AutoRackLowKount > 2"))
+		errs := validateCustomScoringLogic(base, path)
 		assert.Len(t, errs, 1)
-		assert.Contains(t, errs[0], "AutoStructure1Level1Kount")
-		assert.Contains(t, errs[0], "did you mean 'AutoStructure1Level1Count'")
+		assert.Contains(t, errs[0], "AutoRackLowKount")
+		assert.Contains(t, errs[0], "did you mean 'AutoRackLowCount'")
 	})
 
 	t.Run("unknown ScoreSummary field", func(t *testing.T) {
 		path := writeLogic(t, logicWith("\treturn summary.BogusPoints > 0"))
-		errs := validateCustomScoringLogic(&base, path)
+		errs := validateCustomScoringLogic(base, path)
 		assert.Len(t, errs, 1)
 		assert.Contains(t, errs[0], "summary.BogusPoints")
 		assert.Contains(t, errs[0], "is not a field generated")
 	})
 
 	t.Run("missing logic func", func(t *testing.T) {
-		content := "package game\n" +
-			"func ComputeAutonRP(score, opponentScore Score, summary ScoreSummary) bool { return false }\n" +
-			"func ComputeScoringRP(score, opponentScore Score, summary ScoreSummary) bool { return false }\n"
-		errs := validateCustomScoringLogic(&base, writeLogic(t, content))
+		content := "package game\nfunc SomethingElse(score, opponentScore Score, summary ScoreSummary) bool { return false }\n"
+		errs := validateCustomScoringLogic(base, writeLogic(t, content))
 		assert.Len(t, errs, 1)
-		assert.Contains(t, errs[0], "ComputeEndgameRP")
+		assert.Contains(t, errs[0], "ComputeAutoRp")
 		assert.Contains(t, errs[0], "no such function")
 	})
 
 	t.Run("missing file with no ranking points is fine", func(t *testing.T) {
-		noRPs := base
+		noRPs := *base
 		noRPs.RPs = nil
 		assert.Empty(t, validateCustomScoringLogic(&noRPs, filepath.Join(t.TempDir(), "does_not_exist.go")))
 	})
