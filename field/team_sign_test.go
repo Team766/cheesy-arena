@@ -1,6 +1,8 @@
 // Copyright 2024 Team 254. All Rights Reserved.
 // Author: pat@patfairbank.com (Patrick Fairbank)
 
+//go:build !custom
+
 package field
 
 import (

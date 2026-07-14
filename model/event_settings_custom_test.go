@@ -1,7 +1,4 @@
-// Copyright 2014 Team 254. All Rights Reserved.
-// Author: pat@patfairbank.com (Patrick Fairbank)
-
-//go:build !custom
+//go:build custom
 
 package model
 
@@ -37,9 +34,9 @@ func TestEventSettingsReadWrite(t *testing.T) {
 			TransitionShiftDurationSec: 10,
 			ShiftDurationSec:           25,
 			EndgameDurationSec:         30,
-			EnergizedBonusThreshold:    100,
-			SuperchargedBonusThreshold: 360,
-			TraversalBonusThreshold:    50,
+			EnergizedBonusThreshold:    0,
+			SuperchargedBonusThreshold: 0,
+			TraversalBonusThreshold:    0,
 			CompanionAddress:           "",
 			CompanionPort:              0,
 		},

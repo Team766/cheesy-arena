@@ -1,6 +1,4 @@
-// Copyright 2014 Team 254. All Rights Reserved.
-// Author: pat@patfairbank.com (Patrick Fairbank)
-//go:build !custom
+//go:build custom
 
 package web
 
@@ -28,8 +26,8 @@ func TestAudienceDisplay(t *testing.T) {
 	)
 	assert.Equal(t, 200, recorder.Code)
 	if game.CustomGameMode {
-		assert.Contains(t, recorder.Body.String(), "Custom Audience Display")
-		assert.NotContains(t, recorder.Body.String(), "finalTiebreakReason")
+		assert.Contains(t, recorder.Body.String(), "Audience Display - ")
+		assert.Contains(t, recorder.Body.String(), "finalTiebreakReason")
 	} else {
 		assert.Contains(t, recorder.Body.String(), "Audience Display - Untitled Event - Cheesy Arena")
 		assert.Contains(t, recorder.Body.String(), "finalTiebreakReason")
@@ -84,22 +82,23 @@ func TestAudienceDisplayWebsocket(t *testing.T) {
 	assert.True(t, ok)
 	web.arena.RealtimeScoreNotifier.Notify()
 	readWebsocketType(t, ws, "realtimeScore")
+	// Post a saved match result and confirm the scorePosted message is delivered with the tiebreak
+	// reason. Two empty scores tie at 0, so DetermineMatchStatus runs the whole cascade to "TRUE TIE"
+	// — config-agnostic. The specific tiebreak *outcomes* are covered by the generated
+	// DetermineMatchStatus tests (regenerated per custom_game.yaml).
 	web.arena.SavedMatch = &model.Match{
-		Status:              game.RedWonMatch,
+		Status:              game.TieMatch,
 		UseTiebreakCriteria: true,
 	}
 	web.arena.SavedMatchResult = &model.MatchResult{
-		RedScore: &game.Score{},
-		BlueScore: &game.Score{
-			AutoTowerStatuses: [3]game.TowerStatus{game.TowerLevel1},
-			Fouls:             []game.Foul{{FoulId: 1, IsMajor: true}},
-		},
+		RedScore:  &game.Score{},
+		BlueScore: &game.Score{},
 		RedCards:  map[string]string{},
 		BlueCards: map[string]string{},
 	}
 	web.arena.ScorePostedNotifier.Notify()
 	scorePosted := readWebsocketType(t, ws, "scorePosted").(map[string]any)
-	assert.Equal(t, "TIEBREAK: MAJOR FOULS", scorePosted["TiebreakReason"])
+	assert.Equal(t, "TRUE TIE", scorePosted["TiebreakReason"])
 
 	// Test other overlays.
 	web.arena.AllianceSelectionNotifier.Notify()

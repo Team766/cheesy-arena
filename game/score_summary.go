@@ -1,7 +1,6 @@
 // Copyright 2022 Team 254. All Rights Reserved.
 // Author: pat@patfairbank.com (Patrick Fairbank)
-//
-// Model representing the calculated totals of a match score.
+//go:build !custom
 
 package game
 
