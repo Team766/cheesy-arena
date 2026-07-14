@@ -25,7 +25,13 @@ func (web *Web) audienceDisplayHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	template, err := web.parseFiles("templates/audience_display.html")
+	audienceDisplayTemplate := "templates/audience_display.html"
+	audienceDisplayTemplateName := "audience_display.html"
+	if game.CustomGameMode {
+		audienceDisplayTemplate = "templates/generated_audience_display.html"
+		audienceDisplayTemplateName = "generated_audience_display.html"
+	}
+	template, err := web.parseFiles(audienceDisplayTemplate)
 	if err != nil {
 		handleWebErr(w, err)
 		return
@@ -35,7 +41,7 @@ func (web *Web) audienceDisplayHandler(w http.ResponseWriter, r *http.Request) {
 		*model.EventSettings
 		MatchSounds []*game.MatchSound
 	}{web.arena.EventSettings, game.UniqueMatchSounds()}
-	err = template.ExecuteTemplate(w, "audience_display.html", data)
+	err = template.ExecuteTemplate(w, audienceDisplayTemplateName, data)
 	if err != nil {
 		handleWebErr(w, err)
 		return
