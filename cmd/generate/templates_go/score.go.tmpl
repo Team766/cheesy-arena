@@ -17,6 +17,8 @@ type Score struct {
 [[end]][[end]]
 [[range .Statuses]]	[[camel .ID]]Statuses [3][[if .IsBool]]bool[[else]][[camel .ID]]Status[[end]]
 [[end]]
+	// Base (non-generated) Score fields. If you add, remove, or rename one, update the base-field
+	// list in generatedFieldSets (cmd/generate/validate_logic.go) to match — TestGeneratedFieldSetsMatchTemplates guards this.
 	Fouls     []Foul
 	PlayoffDq bool
 

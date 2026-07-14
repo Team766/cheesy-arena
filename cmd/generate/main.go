@@ -23,6 +23,8 @@ var validStatusPhases = map[string]bool{"auto": true, "endgame": true}
 // cleanPatterns lists every generated-file glob, matching the patterns in .gitignore.
 var cleanPatterns = []string{
 	"game/generated_*.go",
+	"web/generated_*.go",
+	"tournament/generated_*.go",
 	"templates/generated_*.html",
 	"static/js/generated_*.js",
 	"cmd/generate/generated_*_test.go",
@@ -83,6 +85,13 @@ func main() {
 	// Validation
 	validationErrors := validateGameYAML(&yamlData)
 
+	// Only check the hand-written scoring logic once the config itself is valid — otherwise the
+	// generated field set it's checked against may be malformed, producing misleading errors.
+	if len(validationErrors) == 0 {
+		logicPath := filepath.Join(*outRoot, "game", "custom_scoring_logic.go")
+		validationErrors = append(validationErrors, validateCustomScoringLogic(&yamlData, logicPath)...)
+	}
+
 	if len(validationErrors) > 0 {
 		fmt.Fprintln(os.Stderr, "Validation errors in custom_game.yaml:")
 		for _, errStr := range validationErrors {
@@ -127,6 +136,24 @@ func main() {
 
 	if err := generateRankingFieldsTest(&yamlData, gameDir); err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating ranking fields test: %v\n", err)
+		os.Exit(1)
+	}
+
+	webDir := filepath.Join(*outRoot, "web")
+	tournamentDir := filepath.Join(*outRoot, "tournament")
+
+	if err := generateReportsRankings(&yamlData, webDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating rankings report handler: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := generateReportsRankingsTest(&yamlData, webDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating rankings report test: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := generateQualificationRankingsTest(&yamlData, tournamentDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating qualification rankings test: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -374,11 +401,17 @@ func validateGameYAML(yamlData *GameYAML) []string {
 		validElements[status.ID] = true
 	}
 
-	// ranking_tiebreakers
+	// ranking_tiebreakers — each metric must be known and must not repeat: two entries resolving to
+	// the same RankingFields field would emit a duplicate struct field (and a duplicate composite-
+	// literal key in the generated tests), which fails to compile.
+	seenRankingTiebreaker := make(map[string]bool)
 	for i, tb := range yamlData.RankingTiebreakers {
 		if !validElements[tb.Metric] {
 			validationErrors = append(validationErrors, fmt.Sprintf("ranking_tiebreakers[%d]: unknown metric '%s'", i, tb.Metric))
+		} else if seenRankingTiebreaker[tb.Metric] {
+			validationErrors = append(validationErrors, fmt.Sprintf("ranking_tiebreakers[%d]: duplicate metric '%s'", i, tb.Metric))
 		}
+		seenRankingTiebreaker[tb.Metric] = true
 	}
 
 	// playoff_tiebreakers
