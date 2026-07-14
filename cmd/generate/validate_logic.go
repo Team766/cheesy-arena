@@ -22,6 +22,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"strings"
 )
 
 // validateCustomScoringLogic checks game/custom_scoring_logic.go against the field set the current
@@ -58,12 +59,14 @@ func validateCustomScoringLogic(yamlData *GameYAML, logicPath string) []string {
 			funcs[fn.Name.Name] = true
 		}
 	}
+	var missing []RankingPoint
 	for _, rp := range yamlData.RPs {
 		if rp.LogicFunc != "" && !funcs[rp.LogicFunc] {
-			errs = append(errs, fmt.Sprintf(
-				"%s: ranking_points '%s' names logic_func '%s', but no such function is defined in %s",
-				logicPath, rp.ID, rp.LogicFunc, logicPath))
+			missing = append(missing, rp)
 		}
+	}
+	if len(missing) > 0 {
+		errs = append(errs, missingLogicFuncMessage(yamlData, logicPath, missing))
 	}
 
 	// (2) Field accesses on Score/ScoreSummary parameters must be generated fields.
@@ -128,6 +131,77 @@ func validateCustomScoringLogic(yamlData *GameYAML, logicPath string) []string {
 	}
 
 	return errs
+}
+
+// missingLogicFuncMessage builds a copy-pasteable stub for each undefined logic_func, followed by a
+// one-shot reference of the data available to scoring logic for the current config — so an author
+// adding a ranking point sees the exact function shape and field/helper names without hunting through
+// the generated Go.
+func missingLogicFuncMessage(y *GameYAML, logicPath string, missing []RankingPoint) string {
+	var b strings.Builder
+	if len(missing) == 1 {
+		fmt.Fprintf(&b, "%s: ranking_points '%s' needs logic_func '%s'. Add it and implement it:\n",
+			logicPath, missing[0].ID, missing[0].LogicFunc)
+	} else {
+		fmt.Fprintf(&b, "%s: %d ranking-point logic functions are missing. Add them and implement:\n", logicPath, len(missing))
+	}
+	for _, rp := range missing {
+		fmt.Fprintf(&b, "\nfunc %s(score, opponentScore Score, summary ScoreSummary) bool {\n\t// TODO: implement (ranking_points '%s')\n\treturn false\n}\n",
+			rp.LogicFunc, rp.ID)
+	}
+	b.WriteString("\nData available to the logic (generated from the current custom_game.yaml):")
+	if counts := scoreHintFields(y); len(counts) > 0 {
+		b.WriteString("\n  score / opponentScore counts: " + strings.Join(counts, ", "))
+	}
+	if helpers := statusHelperHints(y); len(helpers) > 0 {
+		b.WriteString("\n  score / opponentScore status helpers: " + strings.Join(helpers, "; "))
+	}
+	b.WriteString("\n  summary point totals: " + strings.Join(summaryHintFields(y), ", "))
+	return b.String()
+}
+
+// scoreHintFields lists the generated Score count fields, in declaration order.
+func scoreHintFields(y *GameYAML) []string {
+	var fields []string
+	for _, sc := range y.ScoringCounts {
+		for _, ep := range sc.Phases {
+			fields = append(fields, phaseFieldPrefix[ep.Phase]+toCamelCase(sc.ID)+"Count")
+		}
+	}
+	return fields
+}
+
+// statusHelperHints lists each status's Any/Count helper signature, including the enum value consts
+// an author passes as the atLeast threshold.
+func statusHelperHints(y *GameYAML) []string {
+	var hints []string
+	for _, st := range y.Statuses {
+		name := toCamelCase(st.ID)
+		if len(st.Values) == 0 {
+			hints = append(hints, fmt.Sprintf("score.Any%sStatus()/Count%sStatus()", name, name))
+		} else {
+			vals := make([]string, len(st.Values))
+			for i, v := range st.Values {
+				vals[i] = name + toCamelCase(v.ID)
+			}
+			hints = append(hints, fmt.Sprintf("score.Any%sStatus(atLeast %sStatus)/Count%sStatus(...) [values: %s]",
+				name, name, name, strings.Join(vals, ", ")))
+		}
+	}
+	return hints
+}
+
+// summaryHintFields lists the ScoreSummary point totals available to logic. It intentionally omits
+// the ranking-point fields and BonusRankingPoints, which aren't populated when the logic runs.
+func summaryHintFields(y *GameYAML) []string {
+	fields := []string{"AutoPoints", "TeleopPoints", "EndgamePoints", "MatchPoints", "FoulPoints", "Score"}
+	for _, bucket := range buildScoringGroups(y) {
+		fields = append(fields, toCamelCase(bucket.ID)+"Points")
+	}
+	for _, st := range y.Statuses {
+		fields = append(fields, toCamelCase(st.ID)+"Points")
+	}
+	return fields
 }
 
 // generatedFieldSets returns the exact field names the score.go.tmpl and score_summary.go.tmpl

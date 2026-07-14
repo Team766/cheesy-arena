@@ -333,12 +333,18 @@ func TestValidateCustomScoringLogic(t *testing.T) {
 		assert.Contains(t, errs[0], "is not a field generated")
 	})
 
-	t.Run("missing logic func", func(t *testing.T) {
+	t.Run("missing logic func emits a stub with field/helper reference", func(t *testing.T) {
 		content := "package game\nfunc SomethingElse(score, opponentScore Score, summary ScoreSummary) bool { return false }\n"
 		errs := validateCustomScoringLogic(base, writeLogic(t, content))
 		assert.Len(t, errs, 1)
-		assert.Contains(t, errs[0], "ComputeAutoRp")
-		assert.Contains(t, errs[0], "no such function")
+		// The copy-pasteable stub for the missing func.
+		assert.Contains(t, errs[0], "func ComputeAutoRp(score, opponentScore Score, summary ScoreSummary) bool")
+		// The data reference: a count field, a status helper (bool + enum with values), a summary total.
+		assert.Contains(t, errs[0], "AutoRackLowCount")
+		assert.Contains(t, errs[0], "score.AnyParkStatus()")
+		assert.Contains(t, errs[0], "Any"+"ClimbStatus(atLeast ClimbStatus)")
+		assert.Contains(t, errs[0], "ClimbNone")
+		assert.Contains(t, errs[0], "RackPoints")
 	})
 
 	t.Run("missing file with no ranking points is fine", func(t *testing.T) {
