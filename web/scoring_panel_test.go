@@ -1,6 +1,7 @@
+//go:build !custom
+
 // Copyright 2014 Team 254. All Rights Reserved.
 // Author: pat@patfairbank.com (Patrick Fairbank)
-//go:build !custom
 
 package web
 
@@ -24,11 +25,7 @@ func TestScoringPanel(t *testing.T) {
 	assert.Equal(t, 200, recorder.Code)
 	recorder = web.getHttpResponse("/panels/scoring/blue")
 	assert.Equal(t, 200, recorder.Code)
-	if game.CustomGameMode {
-		assert.Contains(t, recorder.Body.String(), "Custom Scoring Panel")
-	} else {
-		assert.Contains(t, recorder.Body.String(), "Scoring Panel - Untitled Event - Cheesy Arena")
-	}
+	assert.Contains(t, recorder.Body.String(), "Scoring Panel - Untitled Event - Cheesy Arena")
 }
 
 func TestScoringPanelWebsocket(t *testing.T) {
