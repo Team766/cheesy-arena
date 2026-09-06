@@ -1,7 +1,6 @@
 // Copyright 2023 Team 254. All Rights Reserved.
 // Author: pat@patfairbank.com (Patrick Fairbank)
-//
-// Model representing the instantaneous score of a match.
+//go:build !custom
 
 package game
 
@@ -11,6 +10,26 @@ type Score struct {
 	EndgameTowerStatuses [3]TowerStatus
 	Fouls                []Foul
 	PlayoffDq            bool
+}
+
+func (score *Score) Clone() *Score {
+	if score == nil {
+		return nil
+	}
+	c := *score
+	if score.Fouls != nil {
+		c.Fouls = append([]Foul(nil), score.Fouls...)
+	}
+	return &c
+}
+
+// CopyInto overwrites dst with a deep copy of the score, reusing dst's existing backing storage
+// where possible. The arena calls this once per 10 ms tick to keep a snapshot for change detection,
+// so it must not allocate in the steady state; the Fouls slice is refilled in place.
+func (score *Score) CopyInto(dst *Score) {
+	fouls := dst.Fouls[:0]
+	*dst = *score
+	dst.Fouls = append(fouls, score.Fouls...)
 }
 
 // Game-specific settings that can be changed via the settings.

@@ -1,7 +1,6 @@
 // Copyright 2020 Team 254. All Rights Reserved.
 // Author: pat@patfairbank.com (Patrick Fairbank)
-//
-// Model of a game-specific rule.
+//go:build !custom
 
 package game
 

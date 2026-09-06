@@ -385,7 +385,10 @@ func getAudienceAllianceScoreFields(
 	allianceScoreSummary *game.ScoreSummary,
 ) *audienceAllianceScoreFields {
 	fields := new(audienceAllianceScoreFields)
-	fields.Score = &allianceScore.CurrentScore
+	// Snapshot the score: the message is serialized concurrently by every websocket listener while
+	// the scoring panels keep mutating the live score, and encoding a map that is being written to
+	// panics.
+	fields.Score = allianceScore.CurrentScore.Clone()
 	fields.ScoreSummary = allianceScoreSummary
 	fields.ActiveRemainingSec = allianceScore.ActiveRemainingSec
 	fields.ActiveDurationSec = allianceScore.ActiveDurationSec

@@ -16,6 +16,7 @@ import (
 
 func SetupTestArena(t *testing.T) *Arena {
 	rand.Seed(0)
+	setupTestGameConfig(t)
 	model.BaseDir = ".."
 	dbDir := t.TempDir()
 	dbPath := filepath.Join(dbDir, "test.db")
