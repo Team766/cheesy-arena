@@ -1,6 +1,6 @@
 // Copyright 2014 Team 254. All Rights Reserved.
 // Author: pat@patfairbank.com (Patrick Fairbank)
-//
+
 // Web handlers for scoring interface.
 
 package web
@@ -20,6 +20,9 @@ import (
 type ScoringPosition struct {
 	Title    string
 	Alliance string
+	// Scorer is the near/far hint this panel filters on ("" shows every element). Only custom
+	// games declare near/far positions; see scoring_panel_custom.go.
+	Scorer string
 }
 
 var positionParameters = map[string]ScoringPosition{
@@ -46,7 +49,7 @@ func (web *Web) scoringPanelHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	template, err := web.parseFiles("templates/scoring_panel.html", "templates/base.html")
+	template, err := web.parseFiles(scoringPanelTemplatePath, "templates/base.html")
 	if err != nil {
 		handleWebErr(w, err)
 		return
@@ -127,40 +130,6 @@ func (web *Web) scoringPanelWebsocketHandler(w http.ResponseWriter, r *http.Requ
 			}
 			web.arena.ScoringPanelRegistry.SetScoreCommitted(position, ws)
 			web.arena.ScoringStatusNotifier.Notify()
-		} else if command == "autoTower" {
-			args := struct {
-				TeamPosition    int
-				AutoTowerStatus int
-			}{}
-			err = mapstructure.Decode(data, &args)
-			if err != nil {
-				writeWebsocketError(ws, err.Error())
-				continue
-			}
-
-			if args.TeamPosition >= 1 && args.TeamPosition <= 3 && args.AutoTowerStatus >= 0 &&
-				args.AutoTowerStatus <= 3 {
-				autoTowerStatus := game.TowerStatus(args.AutoTowerStatus)
-				score.AutoTowerStatuses[args.TeamPosition-1] = autoTowerStatus
-				scoreChanged = true
-			}
-		} else if command == "endgame" {
-			args := struct {
-				TeamPosition       int
-				EndgameTowerStatus int
-			}{}
-			err = mapstructure.Decode(data, &args)
-			if err != nil {
-				writeWebsocketError(ws, err.Error())
-				continue
-			}
-
-			if args.TeamPosition >= 1 && args.TeamPosition <= 3 && args.EndgameTowerStatus >= 0 &&
-				args.EndgameTowerStatus <= 3 {
-				endgameStatus := game.TowerStatus(args.EndgameTowerStatus)
-				score.EndgameTowerStatuses[args.TeamPosition-1] = endgameStatus
-				scoreChanged = true
-			}
 		} else if command == "addFoul" {
 			args := struct {
 				Alliance string
@@ -183,6 +152,10 @@ func (web *Web) scoringPanelWebsocketHandler(w http.ResponseWriter, r *http.Requ
 					append(web.arena.BlueRealtimeScore.CurrentScore.Fouls, foul)
 			}
 			web.arena.RealtimeScoreNotifier.Notify()
+		} else {
+			// Everything else is a game-specific scoring command; see scoring_panel_frc.go and
+			// scoring_panel_custom.go.
+			scoreChanged = handleScoringPanelGameCommand(ws, score, command, data)
 		}
 
 		if scoreChanged {

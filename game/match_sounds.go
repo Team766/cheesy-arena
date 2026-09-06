@@ -51,38 +51,44 @@ func UpdateMatchSounds() {
 			"wav",
 			float64(MatchTiming.AutoDurationSec + MatchTiming.PauseDurationSec),
 		},
-		{
-			"shift_change",
-			"wav",
-			float64(
-				MatchTiming.AutoDurationSec + MatchTiming.PauseDurationSec + MatchTiming.TransitionShiftDurationSec,
-			),
-		},
-		{
-			"shift_change",
-			"wav",
-			float64(
-				MatchTiming.AutoDurationSec + MatchTiming.PauseDurationSec + MatchTiming.TransitionShiftDurationSec +
-					MatchTiming.ShiftDurationSec,
-			),
-		},
-		{
-			"shift_change",
-			"wav",
-			float64(
-				MatchTiming.AutoDurationSec + MatchTiming.PauseDurationSec + MatchTiming.TransitionShiftDurationSec +
-					2*MatchTiming.ShiftDurationSec,
-			),
-		},
-		{
-			"shift_change",
-			"wav",
-			float64(
-				MatchTiming.AutoDurationSec + MatchTiming.PauseDurationSec + MatchTiming.TransitionShiftDurationSec +
-					3*MatchTiming.ShiftDurationSec,
-			),
-		},
-		{
+	}
+	if UseShifts {
+		MatchSounds = append(MatchSounds,
+			&MatchSound{
+				"shift_change",
+				"wav",
+				float64(
+					MatchTiming.AutoDurationSec + MatchTiming.PauseDurationSec + MatchTiming.TransitionShiftDurationSec,
+				),
+			},
+			&MatchSound{
+				"shift_change",
+				"wav",
+				float64(
+					MatchTiming.AutoDurationSec + MatchTiming.PauseDurationSec + MatchTiming.TransitionShiftDurationSec +
+						MatchTiming.ShiftDurationSec,
+				),
+			},
+			&MatchSound{
+				"shift_change",
+				"wav",
+				float64(
+					MatchTiming.AutoDurationSec + MatchTiming.PauseDurationSec + MatchTiming.TransitionShiftDurationSec +
+						2*MatchTiming.ShiftDurationSec,
+				),
+			},
+			&MatchSound{
+				"shift_change",
+				"wav",
+				float64(
+					MatchTiming.AutoDurationSec + MatchTiming.PauseDurationSec + MatchTiming.TransitionShiftDurationSec +
+						3*MatchTiming.ShiftDurationSec,
+				),
+			},
+		)
+	}
+	MatchSounds = append(MatchSounds,
+		&MatchSound{
 			"warning",
 			"wav",
 			float64(
@@ -90,35 +96,35 @@ func UpdateMatchSounds() {
 					MatchTiming.EndgameDurationSec,
 			),
 		},
-		{
+		&MatchSound{
 			"end",
 			"wav",
 			float64(MatchTiming.AutoDurationSec + MatchTiming.PauseDurationSec + GetTeleopDurationSec()),
 		},
-		{
+		&MatchSound{
 			"abort",
 			"wav",
 			-1,
 		},
-		{
+		&MatchSound{
 			"match_result",
 			"wav",
 			-1,
 		},
-		{
+		&MatchSound{
 			"pick_clock",
 			"wav",
 			-1,
 		},
-		{
+		&MatchSound{
 			"pick_clock_expired",
 			"wav",
 			-1,
 		},
-		{
+		&MatchSound{
 			"field_reset",
 			"wav",
 			-1,
 		},
-	}
+	)
 }

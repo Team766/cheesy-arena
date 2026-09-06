@@ -78,6 +78,8 @@ type Arena struct {
 	LastMatchTimeSec                  float64
 	RedRealtimeScore                  *RealtimeScore
 	BlueRealtimeScore                 *RealtimeScore
+	tickStartRedScore                 game.Score
+	tickStartBlueScore                game.Score
 	lastDsPacketTime                  time.Time
 	lastTeamLogTime                   time.Time
 	lastPeriodicTaskTime              time.Time
@@ -786,8 +788,11 @@ func (arena *Arena) Update() {
 
 	arena.handleSounds(matchTimeSec)
 
-	oldRedScore := arena.RedRealtimeScore.CurrentScore
-	oldBlueScore := arena.BlueRealtimeScore.CurrentScore
+	// Snapshot both scores so that changes made further down this tick (Hub state from the PLC, for
+	// one) can be detected below. CopyInto reuses the snapshot's existing maps and slice, so unlike
+	// the Clone() this replaced it does not allocate on every 10 ms tick.
+	arena.RedRealtimeScore.CurrentScore.CopyInto(&arena.tickStartRedScore)
+	arena.BlueRealtimeScore.CurrentScore.CopyInto(&arena.tickStartBlueScore)
 	oldRedActiveRemainingSec := arena.RedRealtimeScore.ActiveRemainingSec
 	redActiveRemaining, redActiveDuration := arena.RedRealtimeScore.CurrentScore.Hub.GetActiveShiftTiming(
 		arena.MatchStartTime, currentTime,
@@ -809,8 +814,8 @@ func (arena *Arena) Update() {
 	// Log after PLC input so each sample includes the latest physical DS Ethernet state.
 	arena.logTeamSnapshots()
 
-	if !oldRedScore.Equals(&arena.RedRealtimeScore.CurrentScore) ||
-		!oldBlueScore.Equals(&arena.BlueRealtimeScore.CurrentScore) ||
+	if !arena.tickStartRedScore.Equals(&arena.RedRealtimeScore.CurrentScore) ||
+		!arena.tickStartBlueScore.Equals(&arena.BlueRealtimeScore.CurrentScore) ||
 		oldRedActiveRemainingSec != arena.RedRealtimeScore.ActiveRemainingSec ||
 		oldBlueActiveRemainingSec != arena.BlueRealtimeScore.ActiveRemainingSec {
 		arena.RealtimeScoreNotifier.Notify()
