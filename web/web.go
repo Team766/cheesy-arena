@@ -81,6 +81,8 @@ func NewWeb(arena *field.Arena) *Web {
 		"redWonMatch":    game.RedWonMatch.Get,
 		"blueWonMatch":   game.BlueWonMatch.Get,
 		"tieMatch":       game.TieMatch.Get,
+		"isCustom":       func() bool { return game.CustomGameMode },
+		"customRPs":      customRankingPoints,
 	}
 
 	return web
@@ -138,6 +140,7 @@ func (web *Web) newHandler() http.Handler {
 	mux.HandleFunc("GET /api/alliances", web.alliancesApiHandler)
 	mux.HandleFunc("GET /api/arena/websocket", web.arenaWebsocketApiHandler)
 	mux.HandleFunc("GET /api/bracket/svg", web.bracketSvgApiHandler)
+	mux.HandleFunc("GET /api/game_config", web.gameConfigApiHandler)
 	mux.HandleFunc("GET /api/matches/{type}", web.matchesApiHandler)
 	mux.HandleFunc("GET /api/rankings", web.rankingsApiHandler)
 	mux.HandleFunc("GET /api/sponsor_slides", web.sponsorSlidesApiHandler)
@@ -255,4 +258,13 @@ func (web *Web) parseFiles(filenames ...string) (*template.Template, error) {
 
 	template := template.New("").Funcs(web.templateHelpers)
 	return template.ParseFiles(paths...)
+}
+
+// customRankingPoints returns the ranking points declared by the active custom game config, in
+// declaration order, so templates can label them by display name. Nil in the stock build.
+func customRankingPoints() []game.RankingPoint {
+	if cfg := game.GetActiveConfig(); cfg != nil {
+		return cfg.RPs
+	}
+	return nil
 }
