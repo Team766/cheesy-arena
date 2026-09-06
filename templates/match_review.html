@@ -82,11 +82,20 @@ UI for listing matches and their results.
 {{define "script"}}
 {{end}}
 {{define "rankingPointSymbols"}}
+{{if isCustom}}
+<span class="match-review-rps nowrap">
+  {{$rps := .RPs}}
+  {{range customRPs}}
+  <span class="match-review-rp" title="{{.DisplayName}}">{{template "rankingPointSymbol" (index $rps .ID)}}</span>
+  {{end}}
+</span>
+{{else}}
 <span class="match-review-rps nowrap" title="Energized, Supercharged, Traversal bonus RPs">
   <span class="match-review-rp" title="Energized Bonus">{{template "rankingPointSymbol" .EnergizedBonusRankingPoint}}</span>
   <span class="match-review-rp" title="Supercharged Bonus">{{template "rankingPointSymbol" .SuperchargedBonusRankingPoint}}</span>
   <span class="match-review-rp" title="Traversal Bonus">{{template "rankingPointSymbol" .TraversalBonusRankingPoint}}</span>
 </span>
+{{end}}
 {{end}}
 {{define "rankingPointSymbol"}}
 {{if .}}<span class="text-success">&#x2611;</span>{{else}}<span class="text-danger">&#x2612;</span>{{end}}

@@ -13,6 +13,11 @@ UI for configuring event settings.
     {{.ErrorMessage}}
   </div>
   {{end}}
+  {{if .CustomGameMode}}
+  <div class="alert alert-info">
+    Custom Game: <strong>{{.CustomGameName}}</strong>
+  </div>
+  {{end}}
   <div class="col-lg-8">
     <div class="card card-body bg-body-tertiary">
       <form id="settingsForm" method="POST" action="/setup/settings">
@@ -34,12 +39,14 @@ UI for configuring event settings.
               Field
             </button>
           </li>
+          {{if not .CustomGameMode}}
           <li class="nav-item">
             <button class="nav-link" id="publishing-tab" data-bs-toggle="tab" data-bs-target="#publishing" type="button"
               role="tab">
               Publishing
             </button>
           </li>
+          {{end}}
           <li class="nav-item">
             <button class="nav-link" id="automation-tab" data-bs-toggle="tab" data-bs-target="#automation" type="button"
               role="tab">
@@ -139,6 +146,7 @@ UI for configuring event settings.
                 </div>
               </div>
             </fieldset>
+            {{if not .CustomGameMode}}
             <fieldset class="mb-4">
               <legend>Team Info Download</legend>
               <div class="row mb-3">
@@ -151,6 +159,7 @@ UI for configuring event settings.
                 </div>
               </div>
             </fieldset>
+            {{end}}
             <fieldset class="mb-4">
               <legend>Authentication</legend>
               <p>Configure password to enable authentication, or leave blank to disable.</p>
@@ -204,6 +213,7 @@ UI for configuring event settings.
                   <input type="text" class="form-control" name="pauseDurationSec" value="{{.PauseDurationSec}}">
                 </div>
               </div>
+              {{if .UseShifts}}
               <div class="row mb-3">
                 <label class="col-lg-6 control-label">Transition Shift Duration<br/>(seconds)</label>
                 <div class="col-lg-6">
@@ -217,12 +227,21 @@ UI for configuring event settings.
                   <input type="text" class="form-control" name="shiftDurationSec" value="{{.ShiftDurationSec}}">
                 </div>
               </div>
+              {{else}}
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Teleop Duration<br/>(seconds, excluding endgame)</label>
+                <div class="col-lg-6">
+                  <input type="text" class="form-control" name="teleopDurationSec" value="{{.TransitionShiftDurationSec}}">
+                </div>
+              </div>
+              {{end}}
               <div class="row mb-3">
                 <label class="col-lg-6 control-label">Endgame Duration<br/>(seconds)</label>
                 <div class="col-lg-6">
                   <input type="text" class="form-control" name="endgameDurationSec" value="{{.EndgameDurationSec}}">
                 </div>
               </div>
+              {{if not .CustomGameMode}}
               <div class="row mb-3">
                 <label class="col-lg-6 control-label">Energized Bonus RP Fuel Threshold</label>
                 <div class="col-lg-6">
@@ -244,6 +263,7 @@ UI for configuring event settings.
                     value="{{.TraversalBonusThreshold}}">
                 </div>
               </div>
+              {{end}}
             </fieldset>
           </div>
           <div class="tab-pane" id="field" role="tabpanel">
@@ -445,6 +465,7 @@ UI for configuring event settings.
               </div>
             </fieldset>
           </div>
+          {{if not .CustomGameMode}}
           <div class="tab-pane" id="publishing" role="tabpanel">
             <fieldset class="mb-4">
               <legend>Publishing</legend>
@@ -496,6 +517,7 @@ UI for configuring event settings.
               {{end}}
             </div>
           </div>
+          {{end}}
           <div class="tab-pane" id="automation" role="tabpanel">
             <fieldset class="mb-4">
               <legend>Audience display</legend>
@@ -507,6 +529,7 @@ UI for configuring event settings.
                 </div>
               </div>
             </fieldset>
+            {{if not .CustomGameMode}}
             <fieldset class="mb-4">
               <legend>Nexus</legend>
               <p>Automatically populate practice and playoff match lineups from Nexus. Uses the same event code as TBA-
@@ -538,6 +561,7 @@ UI for configuring event settings.
                 </div>
               </div>
             </fieldset>
+            {{end}}
             <fieldset class="mb-4">
               <legend>Match Video Recording</legend>
               <p>
@@ -554,6 +578,7 @@ UI for configuring event settings.
                 </div>
               </div>
             </fieldset>
+            {{if not .CustomGameMode}}
             <fieldset class="mb-4">
               <legend>BitFocus Companion Integration</legend>
               <p>
@@ -710,6 +735,7 @@ UI for configuring event settings.
                 </div>
               </div>
             </fieldset>
+            {{end}}
           </div>
           <div class="row justify-content-center">
             <div class="col-lg-3 align-items-center">

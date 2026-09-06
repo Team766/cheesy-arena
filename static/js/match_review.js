@@ -6,6 +6,10 @@
 const allianceResults = {};
 let matchResult;
 
+// Set by the page: in custom game mode the score-editing form is rendered server-side from the game
+// config, and the counts and statuses are read back out of the DOM instead of from fixed fields.
+let customGameMode = false;
+
 const ALLIANCES = ["red", "blue"];
 const NUM_ROBOTS = 3;
 const NUM_HUB_SHIFTS = 8;
@@ -42,16 +46,20 @@ const renderResults = function (alliance) {
   result.score = normalizeScore(result.score);
   result.cards = result.cards || {};
 
-  getInputElement(alliance, "HubWonAuto").prop("checked", result.score.Hub.WonAuto);
-  for (let i = 0; i < NUM_HUB_SHIFTS; i++) {
-    getInputElement(alliance, `HubShiftCount${i}`).val(result.score.Hub.ShiftCounts[i]);
-  }
+  // In custom game mode the count and status inputs are rendered server-side already populated with
+  // the stored values, so there is nothing to fill in here.
+  if (!customGameMode) {
+    getInputElement(alliance, "HubWonAuto").prop("checked", result.score.Hub.WonAuto);
+    for (let i = 0; i < NUM_HUB_SHIFTS; i++) {
+      getInputElement(alliance, `HubShiftCount${i}`).val(result.score.Hub.ShiftCounts[i]);
+    }
 
-  for (let i = 0; i < NUM_ROBOTS; i++) {
-    const i1 = i + 1;
+    for (let i = 0; i < NUM_ROBOTS; i++) {
+      const i1 = i + 1;
 
-    getInputElement(alliance, `AutoTowerStatuses${i1}`, result.score.AutoTowerStatuses[i]).prop("checked", true);
-    getInputElement(alliance, `EndgameTowerStatuses${i1}`, result.score.EndgameTowerStatuses[i]).prop("checked", true);
+      getInputElement(alliance, `AutoTowerStatuses${i1}`, result.score.AutoTowerStatuses[i]).prop("checked", true);
+      getInputElement(alliance, `EndgameTowerStatuses${i1}`, result.score.EndgameTowerStatuses[i]).prop("checked", true);
+    }
   }
 
   renderFouls(alliance);
@@ -66,20 +74,24 @@ const updateResults = function (alliance) {
     formData[v.name] = v.value;
   });
 
-  result.score.AutoTowerStatuses = [];
-  result.score.Hub = {
-    WonAuto: formData[`${alliance}HubWonAuto`] === "on",
-    ShiftCounts: [],
-  };
-  result.score.EndgameTowerStatuses = [];
-  for (let i = 0; i < NUM_HUB_SHIFTS; i++) {
-    result.score.Hub.ShiftCounts[i] = parseFormInt(formData[`${alliance}HubShiftCount${i}`]);
-  }
-  for (let i = 0; i < NUM_ROBOTS; i++) {
-    const i1 = i + 1;
+  if (customGameMode) {
+    updateCustomScore(alliance, result.score);
+  } else {
+    result.score.AutoTowerStatuses = [];
+    result.score.Hub = {
+      WonAuto: formData[`${alliance}HubWonAuto`] === "on",
+      ShiftCounts: [],
+    };
+    result.score.EndgameTowerStatuses = [];
+    for (let i = 0; i < NUM_HUB_SHIFTS; i++) {
+      result.score.Hub.ShiftCounts[i] = parseFormInt(formData[`${alliance}HubShiftCount${i}`]);
+    }
+    for (let i = 0; i < NUM_ROBOTS; i++) {
+      const i1 = i + 1;
 
-    result.score.AutoTowerStatuses[i] = parseFormInt(formData[`${alliance}AutoTowerStatuses${i1}`]);
-    result.score.EndgameTowerStatuses[i] = parseFormInt(formData[`${alliance}EndgameTowerStatuses${i1}`]);
+      result.score.AutoTowerStatuses[i] = parseFormInt(formData[`${alliance}AutoTowerStatuses${i1}`]);
+      result.score.EndgameTowerStatuses[i] = parseFormInt(formData[`${alliance}EndgameTowerStatuses${i1}`]);
+    }
   }
 
   result.score.Fouls = [];
@@ -95,6 +107,32 @@ const updateResults = function (alliance) {
   result.cards = {};
   $.each(result.teams, function (i, team) {
     result.cards[team] = formData[`${alliance}Team${team}Card`];
+  });
+};
+
+// Reads the custom game's server-rendered count and status inputs for one alliance back into the
+// score, replacing the Counts, BoolStatuses and EnumStatuses maps. Every input carries the config id
+// it edits, so no knowledge of the game config is needed here.
+const updateCustomScore = function (alliance, score) {
+  const scoreElement = $(`#${alliance}Score`);
+
+  score.Counts = {};
+  scoreElement.find("[data-custom-count]").each(function () {
+    score.Counts[$(this).attr("data-custom-count")] = parseFormInt($(this).val());
+  });
+
+  score.BoolStatuses = {};
+  scoreElement.find("[data-custom-bool-status]").each(function () {
+    const id = $(this).attr("data-custom-bool-status");
+    score.BoolStatuses[id] = score.BoolStatuses[id] || new Array(NUM_ROBOTS).fill(false);
+    score.BoolStatuses[id][parseFormInt($(this).attr("data-robot-index"))] = $(this).prop("checked");
+  });
+
+  score.EnumStatuses = {};
+  scoreElement.find("[data-custom-enum-status]").each(function () {
+    const id = $(this).attr("data-custom-enum-status");
+    score.EnumStatuses[id] = score.EnumStatuses[id] || new Array(NUM_ROBOTS).fill(0);
+    score.EnumStatuses[id][parseFormInt($(this).attr("data-robot-index"))] = parseFormInt($(this).val());
   });
 };
 
@@ -195,6 +233,12 @@ const updateSummaryCard = function (alliance, summary) {
   $.each(summary, function (field, value) {
     summaryCard.find(`[data-summary-field=${field}]`).html(formatSummaryValue(field, value));
   });
+
+  // Custom game mode: the configured ranking points arrive as a map keyed by ranking point id
+  // rather than as individually named summary fields.
+  $.each(summary.RPs || {}, function (id, value) {
+    summaryCard.find(`[data-summary-rp="${id}"]`).html(formatRankingPointValue(value));
+  });
 };
 
 // Returns the form input element having the given parameters.
@@ -208,11 +252,17 @@ const getInputElement = function (alliance, name, value) {
 
 const normalizeScore = function (score) {
   score = score || {};
-  score.AutoTowerStatuses = normalizeArray(score.AutoTowerStatuses, NUM_ROBOTS, 0);
-  score.EndgameTowerStatuses = normalizeArray(score.EndgameTowerStatuses, NUM_ROBOTS, 0);
-  score.Hub = score.Hub || {};
-  score.Hub.WonAuto = !!score.Hub.WonAuto;
-  score.Hub.ShiftCounts = normalizeArray(score.Hub.ShiftCounts, NUM_HUB_SHIFTS, 0);
+  if (customGameMode) {
+    score.Counts = score.Counts || {};
+    score.BoolStatuses = score.BoolStatuses || {};
+    score.EnumStatuses = score.EnumStatuses || {};
+  } else {
+    score.AutoTowerStatuses = normalizeArray(score.AutoTowerStatuses, NUM_ROBOTS, 0);
+    score.EndgameTowerStatuses = normalizeArray(score.EndgameTowerStatuses, NUM_ROBOTS, 0);
+    score.Hub = score.Hub || {};
+    score.Hub.WonAuto = !!score.Hub.WonAuto;
+    score.Hub.ShiftCounts = normalizeArray(score.Hub.ShiftCounts, NUM_HUB_SHIFTS, 0);
+  }
   score.Fouls = score.Fouls || [];
   return score;
 };
@@ -233,10 +283,14 @@ const cloneTemplateElement = function (id) {
 
 const formatSummaryValue = function (field, value) {
   if (RANKING_POINT_SUMMARY_FIELDS.includes(field)) {
-    return value ? '<span class="score-summary-rp text-success">&#x2611;</span>' :
-      '<span class="score-summary-rp text-danger">&#x2612;</span>';
+    return formatRankingPointValue(value);
   }
   return value;
+};
+
+const formatRankingPointValue = function (value) {
+  return value ? '<span class="score-summary-rp text-success">&#x2611;</span>' :
+    '<span class="score-summary-rp text-danger">&#x2612;</span>';
 };
 
 const parseFormInt = function (value) {

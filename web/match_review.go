@@ -33,6 +33,54 @@ type MatchReviewEditAlliance struct {
 	Teams             []int
 	Summary           *game.ScoreSummary
 	ShowRankingPoints bool
+
+	// CustomPhases is the server-rendered score-editing form for a custom game, one entry per match
+	// phase that the config actually uses. It is always empty in the stock FRC build, whose
+	// score-editing form is hardcoded in the template instead.
+	CustomPhases []MatchReviewEditPhase
+}
+
+// The types below describe the custom game's manual score-editing form. They are deliberately free
+// of any game-specific types so that the same template and view model compile in both builds; they
+// are populated by buildMatchReviewEditPhases, which has a per-build implementation.
+
+// MatchReviewEditPhase is one match phase (auto, teleop or endgame) along with everything from the
+// game config that is scored during it.
+type MatchReviewEditPhase struct {
+	Id           string
+	DisplayName  string
+	Counts       []MatchReviewEditCount
+	BoolStatuses []MatchReviewEditBoolStatus
+	EnumStatuses []MatchReviewEditEnumStatus
+}
+
+// MatchReviewEditCount is one scoring count within one phase; Key is the "<countId>_<phase>" key
+// under which the value is stored in Score.Counts.
+type MatchReviewEditCount struct {
+	Key         string
+	DisplayName string
+	Value       int
+}
+
+// MatchReviewEditBoolStatus is a per-robot boolean status; Values is indexed by robot.
+type MatchReviewEditBoolStatus struct {
+	Id          string
+	DisplayName string
+	Values      [3]bool
+}
+
+// MatchReviewEditEnumStatus is a per-robot multi-valued status; Values holds the selected index
+// into Options for each robot.
+type MatchReviewEditEnumStatus struct {
+	Id          string
+	DisplayName string
+	Options     []MatchReviewEditEnumOption
+	Values      [3]int
+}
+
+type MatchReviewEditEnumOption struct {
+	Index       int
+	DisplayName string
 }
 
 type MatchReviewSummaryResponse struct {
@@ -112,12 +160,14 @@ func (web *Web) matchReviewEditGetHandler(w http.ResponseWriter, r *http.Request
 			Teams:             []int{match.Red1, match.Red2, match.Red3},
 			Summary:           matchResult.RedScoreSummary(),
 			ShowRankingPoints: match.Type != model.Playoff,
+			CustomPhases:      buildMatchReviewEditPhases(matchResult.RedScore),
 		},
 		{
 			Alliance:          "blue",
 			Teams:             []int{match.Blue1, match.Blue2, match.Blue3},
 			Summary:           matchResult.BlueScoreSummary(),
 			ShowRankingPoints: match.Type != model.Playoff,
+			CustomPhases:      buildMatchReviewEditPhases(matchResult.BlueScore),
 		},
 	}
 	data := struct {

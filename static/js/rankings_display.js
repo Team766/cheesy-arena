@@ -12,6 +12,67 @@ var standingsTemplate = Handlebars.compile($("#standingsTemplate").html());
 var rankingsData;
 var prevHighestPlayedMatch;
 
+// Labels for the ranking tiebreaker metrics that aren't a scoring group, count or status id.
+const builtInTiebreakerLabels = {
+  "auto_points": "Auto",
+  "teleop_points": "Teleop",
+  "endgame_points": "Endgame",
+  "total_points": "Total",
+};
+
+// Returns the value of one tiebreaker metric, defaulting to zero for a team that hasn't played yet
+// and therefore has no tiebreaker map at all.
+Handlebars.registerHelper("tiebreaker", function (tiebreakers, metric) {
+  return (tiebreakers && tiebreakers[metric]) || 0;
+});
+
+// Custom game mode: the columns shown between RP and W-L-T, one per configured ranking tiebreaker.
+var customRankingColumns = function (config) {
+  return (config.ranking_tiebreakers || []).map(function (tiebreaker) {
+    const metric = tiebreaker.metric;
+    let label = builtInTiebreakerLabels[metric];
+    if (label === undefined) {
+      const element = (config.scoring_groups || []).find(sg => sg.id === metric) ||
+        (config.scoring_counts || []).find(sc => sc.id === metric) ||
+        (config.statuses || []).find(st => st.id === metric);
+      label = element ? element.display_name : metric;
+    }
+    return {metric: metric, label: label};
+  });
+};
+
+// Custom game mode: replaces the game-specific header cells and recompiles the row template, since
+// which point columns exist is only known once the game configuration has been fetched.
+var buildCustomStandings = function (config) {
+  let headerHtml =
+    '<td class="team-field">Rank</td>' +
+    '<td class="team-field">Team</td>' +
+    '<td class="team-nickname">Name</td>' +
+    '<td class="team-field">RP</td>';
+  let rowHtml =
+    '<td class="team-field">{{../Iteration}} {{this.Rank}}</td>' +
+    '<td class="team-field">{{this.TeamId}}</td>' +
+    '<td class="team-nickname">{{this.Nickname}}</td>' +
+    '<td class="team-field">{{this.RankingPoints}}</td>';
+
+  customRankingColumns(config).forEach(function (column) {
+    headerHtml += `<td class="team-field">${column.label}</td>`;
+    rowHtml += `<td class="team-field">{{tiebreaker this.Tiebreakers "${column.metric}"}}</td>`;
+  });
+
+  headerHtml +=
+    '<td class="team-field">W-L-T</td>' +
+    '<td class="team-field">DQ</td>' +
+    '<td class="team-field">Played</td>';
+  rowHtml +=
+    '<td class="team-field">{{this.Wins}}-{{this.Losses}}-{{this.Ties}}</td>' +
+    '<td class="team-field">{{this.Disqualifications}}</td>' +
+    '<td class="team-field">{{this.Played}}</td>';
+
+  $("#standingsHeaderRow").html(headerHtml);
+  standingsTemplate = Handlebars.compile(`<tbody>{{#each Rankings}}<tr>${rowHtml}</tr>{{/each}}</tbody>`);
+};
+
 // Loads the JSON rankings data from the event server.
 var getRankingsData = function (callback) {
   $.getJSON("/api/rankings", function (data) {
@@ -96,5 +157,16 @@ $(function () {
     },
   });
 
-  updateStaticRankings();
+  // Fetch the game configuration before the first render so that the columns match the game being
+  // played; the endpoint 404s in the stock build, in which case .done() is skipped and the
+  // server-rendered FRC columns are kept.
+  $.getJSON("/api/game_config")
+    .done(function (config) {
+      if (config && config.game && config.game.name) {
+        buildCustomStandings(config);
+      }
+    })
+    .always(function () {
+      updateStaticRankings();
+    });
 });
