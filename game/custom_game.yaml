@@ -1,0 +1,121 @@
+game:
+  name: "My Custom Game"
+
+fouls:
+  minor_foul_points: 5
+  major_foul_points: 15
+
+# game_pieces: Declare the actual physical game pieces. Required on each scoring_counts entry (a
+# count is always "a robot scoring a piece"). Piece identity only — it is not a rollup; to group
+# counts together, give them a shared scoring_group (below).
+game_pieces:
+  - id: game_piece_1
+    display_name: "Game Piece 1"
+  - id: game_piece_2
+    display_name: "Game Piece 2"
+
+# scoring_groups: Declare rollup buckets. A scoring_counts entry tagged with scoring_group has its
+# live count and points summed into this bucket — both the ScoreSummary point field
+# (summary.<Group>Points) and the audience display. An entry with no scoring_group is its own
+# bucket under its own id (so a lone element needs no wrapper group). Tiebreakers reference buckets.
+scoring_groups:
+  - id: structure1
+    display_name: "Struct 1"
+  - id: structure2
+    display_name: "Struct 2"
+
+# scoring_counts: Auto/teleop/endgame counter elements. Each entry lists the phases it can be
+# scored in, each with its own points value (a piece can be worth different points in different
+# phases or on different structures).
+scoring_counts:
+  - id: structure1_level1
+    display_name: "S1L1"
+    game_piece: game_piece_1
+    scoring_group: structure1
+    phases:
+      - phase: auto
+        points: 3
+      - phase: teleop
+        points: 1
+
+  - id: structure1_level2
+    display_name: "S1L2"
+    game_piece: game_piece_1
+    scoring_group: structure1
+    phases:
+      - phase: auto
+        points: 5
+      - phase: teleop
+        points: 3
+
+  - id: structure2_level1
+    display_name: "S2"
+    game_piece: game_piece_2
+    scoring_group: structure2
+    phases:
+      - phase: auto
+        points: 4
+      - phase: teleop
+        points: 2
+
+# statuses: Per-robot statuses (3 robots per alliance). Phases takes exactly one entry, same
+# {phase, points} shape as scoring_counts (auto or endgame only — teleop is not supported for
+# statuses).
+# No 'values' field: generates [3]bool; phases[0].points is the bool-status point value (sugar
+# for an implicit two-value enum: false = 0 points, true = points).
+# With 'values' as a list: generates a typed enum ([3]{ID}Status) with per-state points instead
+# — phases[0].points is unused in that case.
+statuses:
+  - id: leave
+    display_name: "Leave"
+    phases:
+      - phase: auto
+        points: 3
+
+  - id: muster
+    display_name: "Muster"
+    phases:
+      - phase: auto
+    values:
+      - id: none
+        display_name: "None"
+        points: 0
+      - id: partial
+        display_name: "Partial"
+        points: 3
+      - id: full
+        display_name: "Full"
+        points: 6
+
+  - id: park
+    display_name: "Park"
+    phases:
+      - phase: endgame
+        points: 2
+
+# ranking_points: Custom RP bonus conditions.
+# logic_func must be implemented in game/custom_scoring_logic.go.
+ranking_points:
+  - id: auton_rp
+    display_name: "Auto Bonus"
+    logic_func: "ComputeAutonRP"
+
+  - id: scoring_rp
+    display_name: "Score Bonus"
+    logic_func: "ComputeScoringRP"
+
+  - id: endgame_rp
+    display_name: "End Bonus"
+    logic_func: "ComputeEndgameRP"
+
+# ranking_tiebreakers: Drives RankingFields struct fields and Less() sort.
+# Applies after RankingPoints/Played.
+ranking_tiebreakers:
+  - metric: total_points
+  - metric: auto_points
+
+# playoff_tiebreakers: Drives DetermineMatchStatus() cascade for tied playoff matches.
+# Opponent major fouls are always first (implicit — don't list here).
+playoff_tiebreakers:
+  - metric: auto_points
+  - metric: total_points

@@ -1,7 +1,6 @@
 // Copyright 2022 Team 254. All Rights Reserved.
 // Author: pat@patfairbank.com (Patrick Fairbank)
-//
-// Model representing the calculated totals of a match score.
+//go:build !custom
 
 package game
 
@@ -23,20 +22,6 @@ type ScoreSummary struct {
 	TraversalBonusRankingPoint    bool
 	BonusRankingPoints            int
 	NumOpponentMajorFouls         int
-}
-
-type MatchStatus int
-
-const (
-	MatchScheduled MatchStatus = iota
-	MatchHidden
-	RedWonMatch
-	BlueWonMatch
-	TieMatch
-)
-
-func (t MatchStatus) Get() MatchStatus {
-	return t
 }
 
 // Determines the winner of the match given the score summaries for both alliances, and returns a display string

@@ -1,5 +1,6 @@
 // Copyright 2014 Team 254. All Rights Reserved.
 // Author: pat@patfairbank.com (Patrick Fairbank)
+//go:build !custom
 
 package web
 
@@ -26,8 +27,13 @@ func TestAudienceDisplay(t *testing.T) {
 		"/displays/audience?displayId=1&background=%23000&reversed=false&overlayLocation=top",
 	)
 	assert.Equal(t, 200, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "Audience Display - Untitled Event - Cheesy Arena")
-	assert.Contains(t, recorder.Body.String(), "finalTiebreakReason")
+	if game.CustomGameMode {
+		assert.Contains(t, recorder.Body.String(), "Custom Audience Display")
+		assert.NotContains(t, recorder.Body.String(), "finalTiebreakReason")
+	} else {
+		assert.Contains(t, recorder.Body.String(), "Audience Display - Untitled Event - Cheesy Arena")
+		assert.Contains(t, recorder.Body.String(), "finalTiebreakReason")
+	}
 }
 
 func TestAudienceDisplayWebsocket(t *testing.T) {

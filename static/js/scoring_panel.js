@@ -8,9 +8,11 @@ var websocket;
 let alliance;
 let committed = false;
 
-// True when scoring controls in general should be available
+let IS_CUSTOM_GAME_MODE = false;
+window.boolStatuses = {};
+window.gameConfig = null;
+
 let scoringAvailable = false;
-// True when the commit button should be available
 let commitAvailable = false;
 
 let localFoulCounts = {
@@ -18,22 +20,39 @@ let localFoulCounts = {
   "blue-minor": 0,
   "red-major": 0,
   "blue-major": 0,
-}
+};
 
 const foulsDialog = $("#fouls-dialog")[0];
 const showFoulsDialog = function () {
-  foulsDialog.showModal();
-}
+  if (foulsDialog) foulsDialog.showModal();
+};
 const closeFoulsDialog = function () {
-  foulsDialog.close();
-}
+  if (foulsDialog) foulsDialog.close();
+};
 const closeFoulsDialogIfOutside = function (event) {
   if (event.target === foulsDialog) {
     closeFoulsDialog();
   }
-}
+};
 
-// Handles a websocket message to update the teams for the current match.
+const adjustCount = function (id, phase, delta) {
+  websocket.send("adjustCount", {Id: id, Phase: phase, Delta: delta});
+};
+
+const toggleBoolStatus = function (id, robotIndex) {
+  const key = id + "-" + robotIndex;
+  const current = !!window.boolStatuses[key];
+  websocket.send("setStatus", {Id: id, RobotIndex: robotIndex, Value: !current});
+};
+
+const setEnumStatus = function (id, robotIndex, valueId) {
+  websocket.send("setEnumStatus", {Id: id, RobotIndex: robotIndex, ValueId: valueId});
+};
+
+const cycleEnumStatus = function (id, robotIndex) {
+  websocket.send("cycleEnumStatus", {Id: id, RobotIndex: robotIndex});
+};
+
 const handleMatchLoad = function (data) {
   $("#matchName").text(data.Match.LongName);
   if (alliance === "red") {
@@ -50,16 +69,16 @@ const handleMatchLoad = function (data) {
 const renderLocalFoulCounts = function () {
   for (const foulType in localFoulCounts) {
     const count = localFoulCounts[foulType];
-    $(`#foul-${foulType} .fouls-local`).text(count)
+    $(`#foul-${foulType} .fouls-local`).text(count);
   }
-}
+};
 
 const renderGlobalFoulCounts = function (redFouls, blueFouls) {
-  $(`#foul-blue-minor .fouls-global`).text(blueFouls.filter(foul => !foul.IsMajor).length)
-  $(`#foul-blue-major .fouls-global`).text(blueFouls.filter(foul => foul.IsMajor).length)
-  $(`#foul-red-minor .fouls-global`).text(redFouls.filter(foul => !foul.IsMajor).length)
-  $(`#foul-red-major .fouls-global`).text(redFouls.filter(foul => foul.IsMajor).length)
-}
+  $(`#foul-blue-minor .fouls-global`).text(blueFouls.filter(foul => !foul.IsMajor).length);
+  $(`#foul-blue-major .fouls-global`).text(blueFouls.filter(foul => foul.IsMajor).length);
+  $(`#foul-red-minor .fouls-global`).text(redFouls.filter(foul => !foul.IsMajor).length);
+  $(`#foul-red-major .fouls-global`).text(redFouls.filter(foul => foul.IsMajor).length);
+};
 
 const resetFoulCounts = function () {
   localFoulCounts["red-minor"] = 0;
@@ -67,16 +86,15 @@ const resetFoulCounts = function () {
   localFoulCounts["red-major"] = 0;
   localFoulCounts["blue-major"] = 0;
   renderLocalFoulCounts();
-}
+};
 
 const addFoul = function (alliance, isMajor) {
   const foulType = `${alliance}-${isMajor ? "major" : "minor"}`;
   localFoulCounts[foulType] += 1;
   renderLocalFoulCounts();
   websocket.send("addFoul", {Alliance: alliance, IsMajor: isMajor});
-}
+};
 
-// Handles a websocket message to update the match status.
 const handleMatchTime = function (data) {
   switch (matchStates[data.MatchState]) {
     case "AUTO_PERIOD":
@@ -101,18 +119,16 @@ const handleMatchTime = function (data) {
   updateUIMode();
 };
 
-// Clear any local ephemeral state that is not maintained by the server
 const resetLocalState = function () {
   committed = false;
   updateUIMode();
-}
+};
 
-// Refresh which UI controls are enabled/disabled
 const updateUIMode = function () {
   $(".scoring-button").prop('disabled', !scoringAvailable);
   $(".scoring-tower-button").prop('disabled', !scoringAvailable);
   $("#commit").prop('disabled', !commitAvailable);
-}
+};
 
 const endgameStatusNames = [
   "None",
@@ -121,14 +137,8 @@ const endgameStatusNames = [
   "Level 3",
 ];
 
-// Handles a websocket message to update the realtime scoring fields.
 const handleRealtimeScore = function (data) {
-  let realtimeScore;
-  if (alliance === "red") {
-    realtimeScore = data.Red;
-  } else {
-    realtimeScore = data.Blue;
-  }
+  let realtimeScore = alliance === "red" ? data.Red : data.Blue;
   const score = realtimeScore.Score;
 
   for (let i = 0; i < 3; i++) {
@@ -144,21 +154,123 @@ const handleRealtimeScore = function (data) {
   renderGlobalFoulCounts(redFouls, blueFouls);
 };
 
-// Websocket message senders for various buttons
+const handleRealtimeScoreCustom = function (data) {
+  let realtimeScore = alliance === "red" ? data.Red : data.Blue;
+  const score = realtimeScore.Score || {};
+  const counts = score.counts || {};
+  const boolStatusesMap = score.bool_statuses || {};
+  const enumStatusesMap = score.enum_statuses || {};
+
+  if (window.gameConfig) {
+    (window.gameConfig.scoring_counts || []).forEach(sc => {
+      (sc.phases || []).forEach(pp => {
+        const key = `${sc.id}_${pp.phase}`;
+        const val = counts[key] !== undefined ? counts[key] : 0;
+        $(`#${sc.id}-${pp.phase}-count`).text(val);
+      });
+    });
+
+    (window.gameConfig.statuses || []).forEach(st => {
+      if (st.values && st.values.length > 0) {
+        const arr = enumStatusesMap[st.id] || [0, 0, 0];
+        for (let i = 0; i < 3; i++) {
+          const valIdx = arr[i] || 0;
+          const valName = st.values[valIdx] ? st.values[valIdx].display_name : "None";
+          $(`#${st.id}-${i}`).text(valName).attr("data-selected", valIdx !== 0);
+        }
+      } else {
+        const arr = boolStatusesMap[st.id] || [false, false, false];
+        for (let i = 0; i < 3; i++) {
+          const val = !!arr[i];
+          window.boolStatuses[`${st.id}-${i}`] = val;
+          $(`#${st.id}-${i}`).attr("data-selected", val);
+        }
+      }
+    });
+  }
+
+  const redFouls = data.Red.Score.Fouls || [];
+  const blueFouls = data.Blue.Score.Fouls || [];
+  renderGlobalFoulCounts(redFouls, blueFouls);
+};
+
 const handleAutoTowerClick = function (teamPosition, autoTowerStatus) {
   websocket.send("autoTower", {TeamPosition: teamPosition, AutoTowerStatus: autoTowerStatus});
-}
+};
 const handleEndgameClick = function (teamPosition, endgameTowerStatus) {
   websocket.send("endgame", {TeamPosition: teamPosition, EndgameTowerStatus: endgameTowerStatus});
-}
+};
 
-// Sends a websocket message to indicate that the score for this alliance is ready.
 const commitMatchScore = function () {
   websocket.send("commitMatch");
-
   committed = true;
   scoringAvailable = false;
   commitAvailable = false;
+  updateUIMode();
+};
+
+const buildCustomUI = function (config) {
+  const container = $("#tower-controls");
+  if (!container.length) return;
+  container.empty();
+
+  const phases = [
+    { key: "auto", title: "Autonomous" },
+    { key: "teleop", title: "Teleoperated" },
+    { key: "endgame", title: "Endgame" }
+  ];
+
+  phases.forEach(phase => {
+    const phaseCounts = (config.scoring_counts || []).filter(sc =>
+      (sc.phases || []).some(pp => pp.phase === phase.key)
+    );
+    const phaseStatuses = (config.statuses || []).filter(st =>
+      (st.phases || []).some(pp => pp.phase === phase.key)
+    );
+
+    if (phaseCounts.length === 0 && phaseStatuses.length === 0) return;
+
+    let html = `<section class="tower-section" id="${phase.key}-section" style="flex: none; height: auto;">`;
+    html += `<h1>${phase.title}</h1>`;
+    html += `<div style="display: flex; flex-direction: column; gap: 15px; width: 100%;">`;
+
+    phaseCounts.forEach(sc => {
+      html += `<div class="count-control" id="${sc.id}-${phase.key}" style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">`;
+      html += `<span class="count-label" style="font-size: 1.2rem; font-weight: bold;">${sc.display_name}</span>`;
+      html += `<div style="display: flex; align-items: center; gap: 15px;">`;
+      html += `<button class="scoring-button" onclick="adjustCount('${sc.id}', '${phase.key}', -1);" ontouchstart disabled style="font-size: 1.5rem; width: 50px; height: 50px;">-</button>`;
+      html += `<span class="count-value" id="${sc.id}-${phase.key}-count" style="font-size: 1.5rem; min-width: 30px; text-align: center;">0</span>`;
+      html += `<button class="scoring-button" onclick="adjustCount('${sc.id}', '${phase.key}', 1);" ontouchstart disabled style="font-size: 1.5rem; width: 50px; height: 50px;">+</button>`;
+      html += `</div></div>`;
+    });
+
+    phaseStatuses.forEach(st => {
+      html += `<div class="status-control" id="${st.id}-status" style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">`;
+      html += `<span class="status-label" style="font-size: 1.2rem; font-weight: bold;">${st.display_name}</span>`;
+      html += `<div style="display: flex; gap: 8px;">`;
+
+      for (let i = 0; i < 3; i++) {
+        const teamClass = `team-${i + 1}`;
+        if (st.values && st.values.length > 0) {
+          const defaultLabel = st.values[0] ? st.values[0].display_name : "None";
+          html += `<div class="${teamClass}" style="display: flex; flex-direction: column; align-items: center; gap: 4px;">`;
+          html += `<span class="team-num" style="font-size: 0.85rem; font-weight: bold;"></span>`;
+          html += `<button class="scoring-button status-toggle" id="${st.id}-${i}" onclick="cycleEnumStatus('${st.id}', ${i});" ontouchstart disabled style="width: 80px; height: 45px;">${defaultLabel}</button>`;
+          html += `</div>`;
+        } else {
+          html += `<div class="${teamClass}" style="display: flex; flex-direction: column; align-items: center; gap: 4px;">`;
+          html += `<span class="team-num" style="font-size: 0.85rem; font-weight: bold;"></span>`;
+          html += `<button class="scoring-button status-toggle" id="${st.id}-${i}" onclick="toggleBoolStatus('${st.id}', ${i});" ontouchstart disabled style="width: 60px; height: 45px;"></button>`;
+          html += `</div>`;
+        }
+      }
+
+      html += `</div></div>`;
+    });
+
+    html += `</div></section>`;
+    container.append(html);
+  });
   updateUIMode();
 };
 
@@ -168,19 +280,32 @@ $(function () {
   $(".container").attr("data-alliance", alliance);
   resetLocalState();
 
-  // Set up the websocket back to the server.
-  websocket = new CheesyWebsocket("/panels/scoring/" + position + "/websocket", {
-    matchLoad: function (event) {
-      handleMatchLoad(event.data);
-    },
-    matchTime: function (event) {
-      handleMatchTime(event.data);
-    },
-    realtimeScore: function (event) {
-      handleRealtimeScore(event.data);
-    },
-    resetLocalState: function (event) {
-      resetLocalState();
-    },
-  });
+  $.getJSON("/api/game_config")
+    .done(function (config) {
+      if (config && config.game && config.game.name) {
+        IS_CUSTOM_GAME_MODE = true;
+        window.gameConfig = config;
+        buildCustomUI(config);
+      }
+    })
+    .always(function () {
+      websocket = new CheesyWebsocket("/panels/scoring/" + position + "/websocket", {
+        matchLoad: function (event) {
+          handleMatchLoad(event.data);
+        },
+        matchTime: function (event) {
+          handleMatchTime(event.data);
+        },
+        realtimeScore: function (event) {
+          if (IS_CUSTOM_GAME_MODE) {
+            handleRealtimeScoreCustom(event.data);
+          } else {
+            handleRealtimeScore(event.data);
+          }
+        },
+        resetLocalState: function (event) {
+          resetLocalState();
+        },
+      });
+    });
 });

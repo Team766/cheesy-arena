@@ -1,0 +1,12 @@
+/* Custom-game scoring panel styles. Loaded in addition to the shared scoring_panel.css, only by
+   templates/custom_scoring_panel.html.tmpl — these selectors target classes the custom panel emits
+   (.status-toggle / .status-control), so they're kept out of the shared stylesheet. */
+
+.status-toggle[data-selected="true"] {
+  background-color: var(--alliance-highlight);
+}
+
+.status-control .team-num {
+  color: var(--text-active);
+  font-weight: bold;
+}

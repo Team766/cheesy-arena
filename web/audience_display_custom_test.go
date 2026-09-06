@@ -1,0 +1,108 @@
+//go:build custom
+
+package web
+
+import (
+	"github.com/Team254/cheesy-arena/game"
+	"github.com/Team254/cheesy-arena/model"
+	"github.com/Team254/cheesy-arena/websocket"
+	gorillawebsocket "github.com/gorilla/websocket"
+	"github.com/stretchr/testify/assert"
+	"testing"
+)
+
+func TestAudienceDisplay(t *testing.T) {
+	web := setupTestWeb(t)
+
+	recorder := web.getHttpResponse("/displays/audience")
+	assert.Equal(t, 302, recorder.Code)
+	assert.Contains(t, recorder.Header().Get("Location"), "displayId=100")
+	assert.Contains(t, recorder.Header().Get("Location"), "background=%230f0")
+	assert.Contains(t, recorder.Header().Get("Location"), "reversed=false")
+	assert.Contains(t, recorder.Header().Get("Location"), "overlayLocation=bottom")
+
+	recorder = web.getHttpResponse(
+		"/displays/audience?displayId=1&background=%23000&reversed=false&overlayLocation=top",
+	)
+	assert.Equal(t, 200, recorder.Code)
+	if game.CustomGameMode {
+		assert.Contains(t, recorder.Body.String(), "Audience Display - ")
+		assert.Contains(t, recorder.Body.String(), "finalTiebreakReason")
+	} else {
+		assert.Contains(t, recorder.Body.String(), "Audience Display - Untitled Event - Cheesy Arena")
+		assert.Contains(t, recorder.Body.String(), "finalTiebreakReason")
+	}
+}
+
+func TestAudienceDisplayWebsocket(t *testing.T) {
+	web := setupTestWeb(t)
+
+	server, wsUrl := web.startTestServer()
+	defer server.Close()
+	conn, _, err := gorillawebsocket.DefaultDialer.Dial(wsUrl+"/displays/audience/websocket?displayId=1", nil)
+	assert.Nil(t, err)
+	defer conn.Close()
+	ws := websocket.NewTestWebsocket(conn)
+
+	// Should get a few status updates right after connection.
+	readWebsocketType(t, ws, "displayConfiguration")
+	readWebsocketType(t, ws, "matchTiming")
+	readWebsocketType(t, ws, "audienceDisplayMode")
+	readWebsocketType(t, ws, "matchLoad")
+	readWebsocketType(t, ws, "matchTime")
+	readWebsocketType(t, ws, "realtimeScore")
+	readWebsocketType(t, ws, "scorePosted")
+	readWebsocketType(t, ws, "allianceSelection")
+	readWebsocketType(t, ws, "lowerThird")
+
+	// Run through a match cycle.
+	web.arena.MatchLoadNotifier.Notify()
+	readWebsocketType(t, ws, "matchLoad")
+	web.arena.AllianceStations["R1"].Bypass = true
+	web.arena.AllianceStations["R2"].Bypass = true
+	web.arena.AllianceStations["R3"].Bypass = true
+	web.arena.AllianceStations["B1"].Bypass = true
+	web.arena.AllianceStations["B2"].Bypass = true
+	web.arena.AllianceStations["B3"].Bypass = true
+	web.arena.StartMatch()
+	web.arena.Update()
+	web.arena.Update()
+	messages := readWebsocketMultiple(t, ws, 4)
+	screen, ok := messages["audienceDisplayMode"]
+	if assert.True(t, ok) {
+		assert.Equal(t, "match", screen)
+	}
+	sound, ok := messages["playSound"]
+	if assert.True(t, ok) {
+		assert.Equal(t, "start", sound)
+	}
+	_, ok = messages["matchTime"]
+	assert.True(t, ok)
+	_, ok = messages["realtimeScore"]
+	assert.True(t, ok)
+	web.arena.RealtimeScoreNotifier.Notify()
+	readWebsocketType(t, ws, "realtimeScore")
+	// Post a saved match result and confirm the scorePosted message is delivered with the tiebreak
+	// reason. Two empty scores tie at 0, so DetermineMatchStatus runs the whole cascade to "TRUE TIE"
+	// — config-agnostic. The specific tiebreak *outcomes* are covered by the generated
+	// DetermineMatchStatus tests (regenerated per custom_game.yaml).
+	web.arena.SavedMatch = &model.Match{
+		Status:              game.TieMatch,
+		UseTiebreakCriteria: true,
+	}
+	web.arena.SavedMatchResult = &model.MatchResult{
+		RedScore:  &game.Score{},
+		BlueScore: &game.Score{},
+		RedCards:  map[string]string{},
+		BlueCards: map[string]string{},
+	}
+	web.arena.ScorePostedNotifier.Notify()
+	scorePosted := readWebsocketType(t, ws, "scorePosted").(map[string]any)
+	assert.Equal(t, "TRUE TIE", scorePosted["TiebreakReason"])
+
+	// Test other overlays.
+	web.arena.AllianceSelectionNotifier.Notify()
+	readWebsocketType(t, ws, "allianceSelection")
+	web.arena.LowerThirdNotifier.Notify()
+	readWebsocketType(t, ws, "lowerThird")
+}

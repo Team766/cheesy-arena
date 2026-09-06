@@ -85,6 +85,9 @@ func readWebsocketMultiple(t *testing.T, ws *websocket.Websocket, count int) map
 
 func setupTestWeb(t *testing.T) *Web {
 	game.MatchTiming.PauseDurationSec = 2
+	if game.CustomGameMode && game.GetActiveConfig() == nil {
+		_, _ = game.LoadGameConfig("../game/custom_game.yaml")
+	}
 	arena := field.SetupTestArena(t)
 	return NewWeb(arena)
 }

@@ -204,6 +204,31 @@ func (web *Web) alliancesApiHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Generates a JSON dump of the active custom game configuration.
+func (web *Web) gameConfigApiHandler(w http.ResponseWriter, r *http.Request) {
+	cfg := game.GetActiveConfig()
+	if cfg == nil {
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
+
+	jsonData, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		handleWebErr(w, err)
+		return
+	}
+
+	w.Header().Add("Content-Type", "application/json")
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	_, err = w.Write(jsonData)
+	if err != nil {
+		handleWebErr(w, err)
+		return
+	}
+}
+
 // Websocket API for receiving arena status updates.
 func (web *Web) arenaWebsocketApiHandler(w http.ResponseWriter, r *http.Request) {
 	ws, err := websocket.NewWebsocket(w, r)

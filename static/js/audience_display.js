@@ -12,6 +12,11 @@ var websocket;
 let transitionMap;
 const transitionQueue = [];
 let transitionInProgress = false;
+
+// Set to true by generated_audience_display.js when it loads (custom game mode only). Explicit
+// equivalent of the Go-side "if game.CustomGameMode" branch, rather than feature-detecting via
+// typeof on a function that may not be declared at all in the FRC build.
+let IS_CUSTOM_GAME_MODE = false;
 let currentScreen = "blank";
 let redSide;
 let blueSide;
@@ -762,10 +767,18 @@ $(function () {
       handlePlaySound(event.data);
     },
     realtimeScore: function (event) {
-      handleRealtimeScore(event.data);
+      if (IS_CUSTOM_GAME_MODE) {
+        handleRealtimeScoreCustom(event.data);
+      } else {
+        handleRealtimeScore(event.data);
+      }
     },
     scorePosted: function (event) {
-      handleScorePosted(event.data);
+      if (IS_CUSTOM_GAME_MODE) {
+        handleScorePostedCustom(event.data);
+      } else {
+        handleScorePosted(event.data);
+      }
     },
   });
 
@@ -832,5 +845,175 @@ $(function () {
       blank: transitionTimeoutToBlank,
       intro: transitionTimeoutToIntro,
     },
-  }
+  };
+
+  $.getJSON("/api/game_config").done(function (config) {
+    if (config && config.game && config.game.name) {
+      IS_CUSTOM_GAME_MODE = true;
+      window.gameConfig = config;
+      buildCustomAudienceUI(config);
+    }
+  });
 });
+
+const buildCustomAudienceUI = function (config) {
+  const leftFields = $("#leftScoreFields");
+  const rightFields = $("#rightScoreFields");
+  if (leftFields.length && rightFields.length) {
+    leftFields.empty();
+    rightFields.empty();
+
+    const groups = [];
+    (config.scoring_groups || []).forEach(sg => {
+      groups.push({ id: sg.id, name: sg.display_name });
+    });
+    (config.scoring_counts || []).forEach(sc => {
+      if (!sc.scoring_group && !groups.some(g => g.id === sc.id)) {
+        groups.push({ id: sc.id, name: sc.display_name });
+      }
+    });
+
+    groups.forEach(g => {
+      const box = (side) => `
+        <div class="live-counter-box" style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.4); border: 2px solid rgba(255,255,255,0.2); border-radius: 4px; min-width: 70px; height: 75px; padding: 4px;">
+          <span style="font-size: 10px; color: #ccc; text-transform: uppercase; font-weight: bold; text-align: center;">${g.name}</span>
+          <span id="${side}${g.id}Count" style="font-size: 28px; font-weight: bold; color: white;">0</span>
+        </div>`;
+      leftFields.append(box("left"));
+      rightFields.append(box("right"));
+    });
+  }
+
+  const leftBk = $("#leftFinalBreakdown");
+  const centerBk = $("#centerFinalBreakdown");
+  const rightBk = $("#rightFinalBreakdown");
+  if (leftBk.length && centerBk.length && rightBk.length) {
+    leftBk.empty();
+    centerBk.empty();
+    rightBk.empty();
+
+    const rows = [];
+    (config.scoring_groups || []).forEach(sg => {
+      rows.push({ id: sg.id, label: sg.display_name });
+    });
+    (config.scoring_counts || []).forEach(sc => {
+      if (!sc.scoring_group && !rows.some(r => r.id === sc.id)) {
+        rows.push({ id: sc.id, label: sc.display_name });
+      }
+    });
+    (config.statuses || []).forEach(st => {
+      rows.push({ id: st.id, label: st.display_name });
+    });
+    rows.push({ id: "foul", label: "Foul" });
+
+    rows.forEach(r => {
+      centerBk.append(`<div>${r.label}</div>`);
+      leftBk.append(`<div id="leftFinal${r.id}Points">0</div>`);
+      rightBk.append(`<div id="rightFinal${r.id}Points">0</div>`);
+    });
+
+    let centerRp = '<div class="playoff-hidden-field">';
+    let leftRp = '<div class="playoff-hidden-field">';
+    let rightRp = '<div class="playoff-hidden-field">';
+    (config.ranking_points || []).forEach(rp => {
+      centerRp += `<div>${rp.display_name}</div>`;
+      leftRp += `<div id="leftFinal${rp.id}RankingPoint">&#x2718;</div>`;
+      rightRp += `<div id="rightFinal${rp.id}RankingPoint">&#x2718;</div>`;
+    });
+    centerRp += '<div>Ranking Points</div></div>';
+    leftRp += '<div id="leftFinalRankingPoints">0</div></div>';
+    rightRp += '<div id="rightFinalRankingPoints">0</div></div>';
+
+    centerRp += '<div class="playoff-only-field"><div>&nbsp;</div><div>Wins</div></div>';
+    leftRp += '<div class="playoff-only-field"><div>&nbsp;</div><div id="leftFinalWins">0</div></div>';
+    rightRp += '<div class="playoff-only-field"><div>&nbsp;</div><div id="rightFinalWins">0</div></div>';
+
+    centerBk.append(centerRp);
+    leftBk.append(leftRp);
+    rightBk.append(rightRp);
+  }
+};
+
+const handleRealtimeScoreCustom = function (data) {
+  const redSummary = data.Red ? (data.Red.ScoreSummary || {}) : {};
+  const blueSummary = data.Blue ? (data.Blue.ScoreSummary || {}) : {};
+
+  const redGroups = redSummary.group_points || {};
+  const blueGroups = blueSummary.group_points || {};
+
+  const leftGroups = redSide === "red" ? redGroups : blueGroups;
+  const rightGroups = redSide === "red" ? blueGroups : redGroups;
+
+  if (window.gameConfig) {
+    const checkGroup = (id) => {
+      $(`#left${id}Count`).text(leftGroups[id] || 0);
+      $(`#right${id}Count`).text(rightGroups[id] || 0);
+    };
+    (window.gameConfig.scoring_groups || []).forEach(sg => checkGroup(sg.id));
+    (window.gameConfig.scoring_counts || []).forEach(sc => {
+      if (!sc.scoring_group) checkGroup(sc.id);
+    });
+  }
+
+  const leftScore = redSide === "red" ? (redSummary.score || 0) : (blueSummary.score || 0);
+  const rightScore = redSide === "red" ? (blueSummary.score || 0) : (redSummary.score || 0);
+  $("#leftScoreNumber").text(leftScore);
+  $("#rightScoreNumber").text(rightScore);
+};
+
+const handleScorePostedCustom = function (data) {
+  const redSummary = data.RedScoreSummary || {};
+  const blueSummary = data.BlueScoreSummary || {};
+
+  const leftSummary = redSide === "red" ? redSummary : blueSummary;
+  const rightSummary = redSide === "red" ? blueSummary : redSummary;
+
+  const leftGroups = leftSummary.group_points || {};
+  const rightGroups = rightSummary.group_points || {};
+  const leftStatuses = leftSummary.status_points || {};
+  const rightStatuses = rightSummary.status_points || {};
+  const leftRps = leftSummary.rps || {};
+  const rightRps = rightSummary.rps || {};
+
+  if (window.gameConfig) {
+    (window.gameConfig.scoring_groups || []).forEach(sg => {
+      $(`#leftFinal${sg.id}Points`).text(leftGroups[sg.id] || 0);
+      $(`#rightFinal${sg.id}Points`).text(rightGroups[sg.id] || 0);
+    });
+    (window.gameConfig.scoring_counts || []).forEach(sc => {
+      if (!sc.scoring_group) {
+        $(`#leftFinal${sc.id}Points`).text(leftGroups[sc.id] || 0);
+        $(`#rightFinal${sc.id}Points`).text(rightGroups[sc.id] || 0);
+      }
+    });
+    (window.gameConfig.statuses || []).forEach(st => {
+      $(`#leftFinal${st.id}Points`).text(leftStatuses[st.id] || 0);
+      $(`#rightFinal${st.id}Points`).text(rightStatuses[st.id] || 0);
+    });
+    (window.gameConfig.ranking_points || []).forEach(rp => {
+      $(`#leftFinal${rp.id}RankingPoint`).html(leftRps[rp.id] ? "&#x2714;" : "&#x2718;");
+      $(`#rightFinal${rp.id}RankingPoint`).html(rightRps[rp.id] ? "&#x2714;" : "&#x2718;");
+    });
+  }
+
+  $("#leftFinalFoulPoints").text(leftSummary.foul_points || 0);
+  $("#rightFinalFoulPoints").text(rightSummary.foul_points || 0);
+
+  const leftRpTotal = redSide === "red" ? data.RedRankingPoints : data.BlueRankingPoints;
+  const rightRpTotal = redSide === "red" ? data.BlueRankingPoints : data.RedRankingPoints;
+  $("#leftFinalRankingPoints").text(leftRpTotal || 0);
+  $("#rightFinalRankingPoints").text(rightRpTotal || 0);
+
+  $("#leftFinalScore").text(leftSummary.score || 0);
+  $("#rightFinalScore").text(rightSummary.score || 0);
+
+  if (data.Match) {
+    setTeamInfo("left", 1, redSide === "red" ? data.Match.Red1 : data.Match.Blue1, redSide === "red" ? data.RedCards : data.BlueCards, redSide === "red" ? data.RedRankings : data.BlueRankings);
+    setTeamInfo("left", 2, redSide === "red" ? data.Match.Red2 : data.Match.Blue2, redSide === "red" ? data.RedCards : data.BlueCards, redSide === "red" ? data.RedRankings : data.BlueRankings);
+    setTeamInfo("left", 3, redSide === "red" ? data.Match.Red3 : data.Match.Blue3, redSide === "red" ? data.RedCards : data.BlueCards, redSide === "red" ? data.RedRankings : data.BlueRankings);
+
+    setTeamInfo("right", 1, redSide === "red" ? data.Match.Blue1 : data.Match.Red1, redSide === "red" ? data.BlueCards : data.RedCards, redSide === "red" ? data.BlueRankings : data.RedRankings);
+    setTeamInfo("right", 2, redSide === "red" ? data.Match.Blue2 : data.Match.Red2, redSide === "red" ? data.BlueCards : data.RedCards, redSide === "red" ? data.BlueRankings : data.RedRankings);
+    setTeamInfo("right", 3, redSide === "red" ? data.Match.Blue3 : data.Match.Red3, redSide === "red" ? data.BlueCards : data.RedCards, redSide === "red" ? data.BlueRankings : data.RedRankings);
+  }
+};

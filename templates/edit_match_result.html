@@ -191,6 +191,28 @@ UI for manually editing the result for a match.
   <h5 class="card-title">Score Summary</h5>
   <table class="table table-sm mb-0 score-summary-table score-summary-table-{{.Alliance}}">
     <tbody>
+      {{if isCustom}}
+      <tr>
+        {{template "summaryField" dict "label" "Score" "field" "Score" "value" .Summary.Score}}
+        {{template "summaryField" dict "label" "Auto Points" "field" "AutoPoints" "value" .Summary.AutoPoints}}
+      </tr>
+      <tr>
+        {{template "summaryField" dict "label" "Teleop Points" "field" "TeleopPoints" "value" .Summary.TeleopPoints}}
+        {{template "summaryField" dict "label" "Endgame Points" "field" "EndgamePoints" "value" .Summary.EndgamePoints}}
+      </tr>
+      <tr>
+        {{template "summaryField" dict "label" "Foul" "field" "FoulPoints" "value" .Summary.FoulPoints}}
+        {{template "summaryField" dict "label" "Ranking Points" "field" "BonusRankingPoints" "value" .Summary.BonusRankingPoints}}
+      </tr>
+      {{if .ShowRankingPoints}}
+      {{range $id, $val := .Summary.RPs}}
+      <tr>
+        <td class="text-end font-weight-bold">{{$id}}:</td>
+        <td>{{if $val}}<span class="text-success">&#x2611;</span>{{else}}<span class="text-danger">&#x2612;</span>{{end}}</td>
+      </tr>
+      {{end}}
+      {{end}}
+      {{else}}
       <tr>
         {{template "summaryField" dict "label" "Score" "field" "Score" "value" .Summary.Score}}
         {{template "summaryField" dict "label" "Auto Fuel" "field" "AutoFuelPoints" "value" .Summary.AutoFuelPoints}}
@@ -212,6 +234,7 @@ UI for manually editing the result for a match.
         {{template "rankingPointSummaryField" dict "label" "Traversal Bonus" "field" "TraversalBonusRankingPoint" "value" .Summary.TraversalBonusRankingPoint}}
         {{template "summaryField" dict "label" "Ranking Points" "field" "BonusRankingPoints" "value" .Summary.BonusRankingPoints}}
       </tr>
+      {{end}}
       {{end}}
     </tbody>
   </table>

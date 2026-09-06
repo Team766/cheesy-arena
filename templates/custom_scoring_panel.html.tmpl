@@ -1,0 +1,47 @@
+{{define "title"}}Custom Scoring Panel{{end}}
+{{define "head"}}
+<link rel="manifest" href="/static/manifest/{{.PositionName}}_scoring.manifest">
+<meta name="viewport" content="width=device-width, user-scalable=no">
+<link href="/static/css/scoring_panel.css" rel="stylesheet">
+<link href="/static/css/custom_scoring_panel.css" rel="stylesheet">
+{{end}}
+{{define "body"}}
+<header id="banner">
+  <div class="screen-title">{{.Position.Title}} - <span id="matchName">&nbsp;</span></div>
+</header>
+<main>
+  <div id="tower-controls" style="display: flex; flex-direction: column; gap: 20px; width: 100%; flex: none; height: auto;">
+  </div>
+  <div id="panel-actions">
+    <button id="commit" onclick="commitMatchScore();" ontouchstart disabled>Commit</button>
+    <button id="fouls-button" class="scoring-button" onclick="showFoulsDialog();" ontouchstart disabled>Fouls</button>
+  </div>
+</main>
+
+<dialog id="fouls-dialog" onclick="closeFoulsDialogIfOutside(event);">
+  <div class="dialog-container">
+    <div class="dialog-banner">Add Fouls</div>
+    <div id="foul-container">
+      {{template "foulButton" (dict "id" "foul-blue-minor" "color" "blue" "label" "Blue" "isMajor" false)}}
+      {{template "foulButton" (dict "id" "foul-red-minor" "color" "red" "label" "Red" "isMajor" false)}}
+      {{template "foulButton" (dict "id" "foul-blue-major" "color" "blue" "label" "Blue Major" "isMajor" true)}}
+      {{template "foulButton" (dict "id" "foul-red-major" "color" "red" "label" "Red Major" "isMajor" true)}}
+    </div>
+    <button class="dialog-close" autofocus onclick="closeFoulsDialog();" ontouchstart>Close</button>
+  </div>
+</dialog>
+{{end}}
+
+{{define "script"}}
+<script src="/static/js/match_timing.js"></script>
+<script src="/static/js/scoring_panel.js"></script>
+{{end}}
+
+{{define "foulButton"}}
+<button id="{{.id}}" class="foul-button {{.color}} scoring-button" ontouchstart onclick="addFoul('{{.color}}', {{.isMajor}});">
+  <div class="foul-button-label">{{.label}}</div>
+  <div class="foul-button-counters">
+    <span class="fouls-local">0</span> / <span class="fouls-global">0</span>
+  </div>
+</button>
+{{end}}

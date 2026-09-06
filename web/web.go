@@ -81,6 +81,7 @@ func NewWeb(arena *field.Arena) *Web {
 		"redWonMatch":    game.RedWonMatch.Get,
 		"blueWonMatch":   game.BlueWonMatch.Get,
 		"tieMatch":       game.TieMatch.Get,
+		"isCustom":       isCustomBuild,
 	}
 
 	return web
@@ -138,6 +139,7 @@ func (web *Web) newHandler() http.Handler {
 	mux.HandleFunc("GET /api/alliances", web.alliancesApiHandler)
 	mux.HandleFunc("GET /api/arena/websocket", web.arenaWebsocketApiHandler)
 	mux.HandleFunc("GET /api/bracket/svg", web.bracketSvgApiHandler)
+	mux.HandleFunc("GET /api/game_config", web.gameConfigApiHandler)
 	mux.HandleFunc("GET /api/matches/{type}", web.matchesApiHandler)
 	mux.HandleFunc("GET /api/rankings", web.rankingsApiHandler)
 	mux.HandleFunc("GET /api/sponsor_slides", web.sponsorSlidesApiHandler)

@@ -148,10 +148,8 @@ func (database *Database) GetEventSettings() (*EventSettings, error) {
 		TransitionShiftDurationSec: game.MatchTiming.TransitionShiftDurationSec,
 		ShiftDurationSec:           game.MatchTiming.ShiftDurationSec,
 		EndgameDurationSec:         game.MatchTiming.EndgameDurationSec,
-		EnergizedBonusThreshold:    game.EnergizedBonusThreshold,
-		SuperchargedBonusThreshold: game.SuperchargedBonusThreshold,
-		TraversalBonusThreshold:    game.TraversalBonusThreshold,
 	}
+	initDefaultThresholds(&eventSettings)
 
 	if err := database.eventSettingsTable.create(&eventSettings); err != nil {
 		return nil, err

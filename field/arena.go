@@ -786,8 +786,8 @@ func (arena *Arena) Update() {
 
 	arena.handleSounds(matchTimeSec)
 
-	oldRedScore := arena.RedRealtimeScore.CurrentScore
-	oldBlueScore := arena.BlueRealtimeScore.CurrentScore
+	oldRedScore := arena.RedRealtimeScore.CurrentScore.Clone()
+	oldBlueScore := arena.BlueRealtimeScore.CurrentScore.Clone()
 	oldRedActiveRemainingSec := arena.RedRealtimeScore.ActiveRemainingSec
 	redActiveRemaining, redActiveDuration := arena.RedRealtimeScore.CurrentScore.Hub.GetActiveShiftTiming(
 		arena.MatchStartTime, currentTime,

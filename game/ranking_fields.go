@@ -1,7 +1,6 @@
 // Copyright 2017 Team 254. All Rights Reserved.
 // Author: pat@patfairbank.com (Patrick Fairbank)
-//
-// Game-specific fields by which teams are ranked and the logic for sorting rankings.
+//go:build !custom
 
 package game
 
