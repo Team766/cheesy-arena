@@ -1,0 +1,103 @@
+# Self-contained game config used by the Go test suite. It is deliberately NOT the shipped
+# game/custom_game.yaml: tests assert exact numbers against this file, so editing custom_game.yaml
+# (which is a user-owned document) can never break the suite.
+#
+# Coverage it is chosen to provide:
+#   - two scoring groups, plus one scoring count that has no group and is therefore its own bucket
+#   - counts in auto+teleop, teleop only, endgame only, and auto+teleop again
+#   - one bool status (auto) and one enum status (endgame) with three values
+#   - two ranking points, whose logic funcs are registered by game/test_helpers_custom.go
+#   - ranking and playoff tiebreaker cascades that mix built-in and config-derived metrics
+game:
+  name: "Fixture Game"
+
+fouls:
+  minor_foul_points: 4
+  major_foul_points: 12
+
+game_pieces:
+  - id: cube
+    display_name: "Cube"
+  - id: cone
+    display_name: "Cone"
+
+scoring_groups:
+  - id: rack
+    display_name: "Rack"
+  - id: tower
+    display_name: "Tower"
+
+scoring_counts:
+  - id: rack_low
+    display_name: "Rack Low"
+    game_piece: cube
+    scoring_group: rack
+    phases:
+      - phase: auto
+        points: 3
+      - phase: teleop
+        points: 2
+
+  - id: rack_high
+    display_name: "Rack High"
+    game_piece: cone
+    scoring_group: rack
+    phases:
+      - phase: teleop
+        points: 5
+
+  - id: tower_hang
+    display_name: "Tower Hang"
+    game_piece: cone
+    scoring_group: tower
+    phases:
+      - phase: endgame
+        points: 7
+
+  - id: loose_cube
+    display_name: "Loose Cube"
+    game_piece: cube
+    phases:
+      - phase: auto
+        points: 1
+      - phase: teleop
+        points: 4
+
+statuses:
+  - id: leave
+    display_name: "Leave"
+    phases:
+      - phase: auto
+        points: 3
+
+  - id: climb
+    display_name: "Climb"
+    phases:
+      - phase: endgame
+    values:
+      - id: none
+        display_name: "None"
+        points: 0
+      - id: low
+        display_name: "Low"
+        points: 4
+      - id: high
+        display_name: "High"
+        points: 9
+
+ranking_points:
+  - id: auto_rp
+    display_name: "Auto RP"
+    logic_func: "FixtureAutoRp"
+
+  - id: climb_rp
+    display_name: "Climb RP"
+    logic_func: "FixtureClimbRp"
+
+ranking_tiebreakers:
+  - metric: total_points
+  - metric: rack
+
+playoff_tiebreakers:
+  - metric: auto_points
+  - metric: climb
