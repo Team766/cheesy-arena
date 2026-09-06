@@ -2,19 +2,21 @@
 
 package game
 
+// ScoreSummary carries no json tags: like the stock build's summary, its JSON keys are the Go field
+// names. game/json_contract_test.go pins the exact key set that the web UI depends on.
 type ScoreSummary struct {
-	PlayoffDq             bool            `json:"playoff_dq"`
-	AutoPoints            int             `json:"auto_points"`
-	TeleopPoints          int             `json:"teleop_points"`
-	EndgamePoints         int             `json:"endgame_points"`
-	MatchPoints           int             `json:"match_points"`
-	FoulPoints            int             `json:"foul_points"`
-	Score                 int             `json:"score"`
-	NumOpponentMajorFouls int             `json:"num_opponent_major_fouls"`
-	GroupPoints           map[string]int  `json:"group_points"`
-	StatusPoints          map[string]int  `json:"status_points"`
-	RPs                   map[string]bool `json:"rps"`
-	BonusRankingPoints    int             `json:"bonus_ranking_points"`
+	PlayoffDq             bool
+	AutoPoints            int
+	TeleopPoints          int
+	EndgamePoints         int
+	MatchPoints           int
+	FoulPoints            int
+	Score                 int
+	NumOpponentMajorFouls int
+	GroupPoints           map[string]int
+	StatusPoints          map[string]int
+	RPs                   map[string]bool
+	BonusRankingPoints    int
 }
 
 func (score *Score) Summarize(opponentScore *Score) *ScoreSummary {
@@ -35,20 +37,9 @@ func (score *Score) Summarize(opponentScore *Score) *ScoreSummary {
 	cfg := GetActiveConfig()
 	if cfg != nil {
 		for _, sc := range cfg.ScoringCounts {
-			bucketID := sc.ScoringGroup
-			if bucketID == "" {
-				bucketID = sc.ID
-			}
+			bucketID := sc.Bucket()
 			for _, pp := range sc.Phases {
-				var phaseEnum Phase
-				switch pp.Phase {
-				case "auto":
-					phaseEnum = PhaseAuto
-				case "teleop":
-					phaseEnum = PhaseTeleop
-				case "endgame":
-					phaseEnum = PhaseEndgame
-				}
+				phaseEnum, _ := PhaseFromString(pp.Phase)
 				count := score.GetCount(sc.ID, phaseEnum)
 				pts := count * pp.Points
 
@@ -123,6 +114,10 @@ func (score *Score) Summarize(opponentScore *Score) *ScoreSummary {
 	return summary
 }
 
+// GetMetric returns the value of one of the metrics named by GameYAML.MetricIDs: the four built-ins
+// plus every scoring-group bucket and status in the active config. Any other name (including
+// "score", "match_points", "foul_points" and "ranking_points", which validation reserves precisely
+// so that they cannot become metric ids) returns 0.
 func (summary *ScoreSummary) GetMetric(metric string) int {
 	if summary == nil {
 		return 0
@@ -134,12 +129,8 @@ func (summary *ScoreSummary) GetMetric(metric string) int {
 		return summary.TeleopPoints
 	case "endgame_points":
 		return summary.EndgamePoints
-	case "total_points", "match_points":
+	case "total_points":
 		return summary.MatchPoints
-	case "score":
-		return summary.Score
-	case "foul_points":
-		return summary.FoulPoints
 	}
 	if pts, ok := summary.GroupPoints[metric]; ok {
 		return pts
@@ -180,10 +171,11 @@ func DetermineMatchStatus(
 			for _, tb := range cfg.PlayoffTiebreakers {
 				redVal := redSummary.GetMetric(tb.Metric)
 				blueVal := blueSummary.GetMetric(tb.Metric)
+				label := cfg.MetricLabel(tb.Metric)
 				if redVal > blueVal {
-					return RedWonMatch, "TIEBREAK: " + tb.Metric
+					return RedWonMatch, "TIEBREAK: " + label
 				} else if blueVal > redVal {
-					return BlueWonMatch, "TIEBREAK: " + tb.Metric
+					return BlueWonMatch, "TIEBREAK: " + label
 				}
 			}
 		}

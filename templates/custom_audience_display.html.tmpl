@@ -6,22 +6,7 @@
     <link rel="stylesheet" href="/static/css/lib/bootstrap.min.css"/>
     <link rel="stylesheet" href="/static/css/cheesy-arena.css"/>
     <link rel="stylesheet" href="/static/css/audience_display.css"/>
-    <style>
-      #logo {
-        top: 0 !important;
-        width: 150px;
-        height: 150px;
-        object-fit: cover;
-        border-radius: 50%;
-      }
-      #blindsLogo {
-        top: 0;
-        width: 310px;
-        height: 310px;
-        object-fit: cover;
-        border-radius: 50%;
-      }
-    </style>
+    <link rel="stylesheet" href="/static/css/custom_audience_display.css"/>
   </head>
   <body>
     <div id="overlayCentering">
@@ -40,14 +25,12 @@
                 <img class="avatar" id="leftTeam2Avatar" src=""/>
                 <img class="avatar" id="leftTeam3Avatar" src=""/>
               </div>
-              <div class="score-fields" id="leftScoreFields" style="display: flex; gap: 15px; align-items: center;">
-              </div>
+              <div class="score-fields" id="leftScoreFields"></div>
               <div class="score-number" id="leftScoreNumber"></div>
             </div>
             <div class="score score-right reversible-right">
               <div class="score-number" id="rightScoreNumber"></div>
-              <div class="score-fields" id="rightScoreFields" style="display: flex; gap: 15px; align-items: center;">
-              </div>
+              <div class="score-fields" id="rightScoreFields"></div>
               <div class="avatars">
                 <img class="avatar" id="rightTeam1Avatar" src=""/>
                 <img class="avatar" id="rightTeam2Avatar" src=""/>
@@ -128,12 +111,11 @@
                 <div class="final-destination" id="leftFinalDestination"></div>
               </div>
             </div>
-            <div class="final-breakdown" id="leftFinalBreakdown">
-            </div>
-            <div class="final-breakdown" id="centerFinalBreakdown" style="text-align: center;">
-            </div>
-            <div class="final-breakdown" id="rightFinalBreakdown" style="text-align: right;">
-            </div>
+            {{/* The breakdown rows are built by buildCustomAudienceUI() in
+                 static/js/audience_display.js from the game configuration. */}}
+            <div class="final-breakdown" id="leftFinalBreakdown"></div>
+            <div class="final-breakdown" id="centerFinalBreakdown"></div>
+            <div class="final-breakdown" id="rightFinalBreakdown"></div>
             <div class="final-breakdown final-breakdown-teams">
               <div class="final-teams reversible-right">
                 <div class="final-alliance playoff-only-field" id="rightFinalAlliance"></div>
@@ -193,7 +175,7 @@
           <td class="selection-cell">{{"{{#if this}}"}}{{"{{this}}"}}{{"{{/if}}"}}</td>
           {{"{{/each}}"}}
         </tr>
-        {{"{{#each}}"}}
+        {{"{{/each}}"}}
         <tr>
           <td id="allianceSelectionTimer" colspan="{{"{{numColumns}}"}}"></td>
         </tr>

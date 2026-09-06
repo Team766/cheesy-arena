@@ -1,6 +1,82 @@
 /* Custom-game scoring panel styles. Loaded in addition to the shared scoring_panel.css, only by
-   templates/custom_scoring_panel.html.tmpl — these selectors target classes the custom panel emits
-   (.status-toggle / .status-control), so they're kept out of the shared stylesheet. */
+   templates/custom_scoring_panel.html.tmpl — these selectors target classes buildCustomUI() in
+   static/js/scoring_panel.js emits, so they're kept out of the shared stylesheet. */
+
+/* The custom panel stacks one section per phase and grows past the viewport if the game has many
+   scoring elements, so it opts out of the shared "fill exactly one screen" flex sizing. */
+#tower-controls {
+  flex: none;
+  height: auto;
+  gap: 20px;
+}
+
+#tower-controls .tower-section {
+  flex: none;
+  height: auto;
+}
+
+.custom-controls {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.count-control,
+.status-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.count-label,
+.status-label {
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+.count-buttons {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.count-button {
+  width: 50px;
+  height: 50px;
+  font-size: 1.5rem;
+}
+
+.count-value {
+  min-width: 30px;
+  font-size: 1.5rem;
+  text-align: center;
+}
+
+.status-teams {
+  display: flex;
+  gap: 8px;
+}
+
+.status-team {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-toggle {
+  width: 60px;
+  height: 45px;
+}
+
+/* Enum statuses show their current value's name, which needs more room than a bool checkmark. */
+.status-toggle.enum-toggle {
+  width: 80px;
+}
 
 .status-toggle[data-selected="true"] {
   background-color: var(--alliance-highlight);
@@ -8,5 +84,6 @@
 
 .status-control .team-num {
   color: var(--text-active);
+  font-size: 0.85rem;
   font-weight: bold;
 }

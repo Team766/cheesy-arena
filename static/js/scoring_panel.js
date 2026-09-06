@@ -8,11 +8,21 @@ var websocket;
 let alliance;
 let committed = false;
 
+// True when the server is running a YAML-configured custom game; set from GET /api/game_config
+// during page load, before the websocket is opened, so the realtime handler knows which score
+// shape to expect.
 let IS_CUSTOM_GAME_MODE = false;
-window.boolStatuses = {};
+// Custom game mode only: the near/far scorer hint this panel filters on ("" = show everything).
+let panelScorer = "";
+// The parsed /api/game_config document, used to build the panel and to iterate scoring elements.
 window.gameConfig = null;
+// Custom game mode only: mirror of the server's boolean statuses, keyed "<statusId>-<robotIndex>",
+// so that a toggle press can send the opposite of the current value.
+window.boolStatuses = {};
 
+// True when scoring controls in general should be available
 let scoringAvailable = false;
+// True when the commit button should be available
 let commitAvailable = false;
 
 let localFoulCounts = {
@@ -20,39 +30,41 @@ let localFoulCounts = {
   "blue-minor": 0,
   "red-major": 0,
   "blue-major": 0,
-};
+}
 
 const foulsDialog = $("#fouls-dialog")[0];
 const showFoulsDialog = function () {
-  if (foulsDialog) foulsDialog.showModal();
-};
+  foulsDialog.showModal();
+}
 const closeFoulsDialog = function () {
-  if (foulsDialog) foulsDialog.close();
-};
+  foulsDialog.close();
+}
 const closeFoulsDialogIfOutside = function (event) {
   if (event.target === foulsDialog) {
     closeFoulsDialog();
   }
-};
+}
 
+// Websocket message senders for the custom game mode controls.
 const adjustCount = function (id, phase, delta) {
   websocket.send("adjustCount", {Id: id, Phase: phase, Delta: delta});
-};
+}
 
 const toggleBoolStatus = function (id, robotIndex) {
   const key = id + "-" + robotIndex;
   const current = !!window.boolStatuses[key];
   websocket.send("setStatus", {Id: id, RobotIndex: robotIndex, Value: !current});
-};
+}
 
 const setEnumStatus = function (id, robotIndex, valueId) {
   websocket.send("setEnumStatus", {Id: id, RobotIndex: robotIndex, ValueId: valueId});
-};
+}
 
 const cycleEnumStatus = function (id, robotIndex) {
   websocket.send("cycleEnumStatus", {Id: id, RobotIndex: robotIndex});
-};
+}
 
+// Handles a websocket message to update the teams for the current match.
 const handleMatchLoad = function (data) {
   $("#matchName").text(data.Match.LongName);
   if (alliance === "red") {
@@ -69,16 +81,16 @@ const handleMatchLoad = function (data) {
 const renderLocalFoulCounts = function () {
   for (const foulType in localFoulCounts) {
     const count = localFoulCounts[foulType];
-    $(`#foul-${foulType} .fouls-local`).text(count);
+    $(`#foul-${foulType} .fouls-local`).text(count)
   }
-};
+}
 
 const renderGlobalFoulCounts = function (redFouls, blueFouls) {
-  $(`#foul-blue-minor .fouls-global`).text(blueFouls.filter(foul => !foul.IsMajor).length);
-  $(`#foul-blue-major .fouls-global`).text(blueFouls.filter(foul => foul.IsMajor).length);
-  $(`#foul-red-minor .fouls-global`).text(redFouls.filter(foul => !foul.IsMajor).length);
-  $(`#foul-red-major .fouls-global`).text(redFouls.filter(foul => foul.IsMajor).length);
-};
+  $(`#foul-blue-minor .fouls-global`).text(blueFouls.filter(foul => !foul.IsMajor).length)
+  $(`#foul-blue-major .fouls-global`).text(blueFouls.filter(foul => foul.IsMajor).length)
+  $(`#foul-red-minor .fouls-global`).text(redFouls.filter(foul => !foul.IsMajor).length)
+  $(`#foul-red-major .fouls-global`).text(redFouls.filter(foul => foul.IsMajor).length)
+}
 
 const resetFoulCounts = function () {
   localFoulCounts["red-minor"] = 0;
@@ -86,15 +98,16 @@ const resetFoulCounts = function () {
   localFoulCounts["red-major"] = 0;
   localFoulCounts["blue-major"] = 0;
   renderLocalFoulCounts();
-};
+}
 
 const addFoul = function (alliance, isMajor) {
   const foulType = `${alliance}-${isMajor ? "major" : "minor"}`;
   localFoulCounts[foulType] += 1;
   renderLocalFoulCounts();
   websocket.send("addFoul", {Alliance: alliance, IsMajor: isMajor});
-};
+}
 
+// Handles a websocket message to update the match status.
 const handleMatchTime = function (data) {
   switch (matchStates[data.MatchState]) {
     case "AUTO_PERIOD":
@@ -119,16 +132,18 @@ const handleMatchTime = function (data) {
   updateUIMode();
 };
 
+// Clear any local ephemeral state that is not maintained by the server
 const resetLocalState = function () {
   committed = false;
   updateUIMode();
-};
+}
 
+// Refresh which UI controls are enabled/disabled
 const updateUIMode = function () {
   $(".scoring-button").prop('disabled', !scoringAvailable);
   $(".scoring-tower-button").prop('disabled', !scoringAvailable);
   $("#commit").prop('disabled', !commitAvailable);
-};
+}
 
 const endgameStatusNames = [
   "None",
@@ -137,8 +152,14 @@ const endgameStatusNames = [
   "Level 3",
 ];
 
+// Handles a websocket message to update the realtime scoring fields.
 const handleRealtimeScore = function (data) {
-  let realtimeScore = alliance === "red" ? data.Red : data.Blue;
+  let realtimeScore;
+  if (alliance === "red") {
+    realtimeScore = data.Red;
+  } else {
+    realtimeScore = data.Blue;
+  }
   const score = realtimeScore.Score;
 
   for (let i = 0; i < 3; i++) {
@@ -154,12 +175,15 @@ const handleRealtimeScore = function (data) {
   renderGlobalFoulCounts(redFouls, blueFouls);
 };
 
+// Custom game mode equivalent of handleRealtimeScore. The custom game.Score serializes as
+// Counts ("<countId>_<phase>" -> int), BoolStatuses (id -> [3]bool) and EnumStatuses
+// (id -> [3]int, indexes into the status' configured values).
 const handleRealtimeScoreCustom = function (data) {
-  let realtimeScore = alliance === "red" ? data.Red : data.Blue;
+  const realtimeScore = alliance === "red" ? data.Red : data.Blue;
   const score = realtimeScore.Score || {};
-  const counts = score.counts || {};
-  const boolStatusesMap = score.bool_statuses || {};
-  const enumStatusesMap = score.enum_statuses || {};
+  const counts = score.Counts || {};
+  const boolStatusesMap = score.BoolStatuses || {};
+  const enumStatusesMap = score.EnumStatuses || {};
 
   if (window.gameConfig) {
     (window.gameConfig.scoring_counts || []).forEach(sc => {
@@ -194,75 +218,85 @@ const handleRealtimeScoreCustom = function (data) {
   renderGlobalFoulCounts(redFouls, blueFouls);
 };
 
+// Websocket message senders for various buttons
 const handleAutoTowerClick = function (teamPosition, autoTowerStatus) {
   websocket.send("autoTower", {TeamPosition: teamPosition, AutoTowerStatus: autoTowerStatus});
-};
+}
 const handleEndgameClick = function (teamPosition, endgameTowerStatus) {
   websocket.send("endgame", {TeamPosition: teamPosition, EndgameTowerStatus: endgameTowerStatus});
-};
+}
 
+// Sends a websocket message to indicate that the score for this alliance is ready.
 const commitMatchScore = function () {
   websocket.send("commitMatch");
+
   committed = true;
   scoringAvailable = false;
   commitAvailable = false;
   updateUIMode();
 };
 
+// Builds the scoring controls for a custom game from its configuration: one section per phase,
+// containing a +/- control for every scoring count in that phase and a per-robot button row for
+// every status in that phase. Presentation lives in static/css/custom_scoring_panel.css.
 const buildCustomUI = function (config) {
   const container = $("#tower-controls");
   if (!container.length) return;
   container.empty();
 
   const phases = [
-    { key: "auto", title: "Autonomous" },
-    { key: "teleop", title: "Teleoperated" },
-    { key: "endgame", title: "Endgame" }
+    {key: "auto", title: "Autonomous"},
+    {key: "teleop", title: "Teleoperated"},
+    {key: "endgame", title: "Endgame"},
   ];
 
   phases.forEach(phase => {
+    // An element with a scorer hint only appears on the matching near/far panel; a panel with no
+    // hint of its own (the plain red/blue panels) shows everything.
+    const scoredHere = el => !panelScorer || !el.scorer || el.scorer === panelScorer;
     const phaseCounts = (config.scoring_counts || []).filter(sc =>
-      (sc.phases || []).some(pp => pp.phase === phase.key)
+      scoredHere(sc) && (sc.phases || []).some(pp => pp.phase === phase.key)
     );
     const phaseStatuses = (config.statuses || []).filter(st =>
-      (st.phases || []).some(pp => pp.phase === phase.key)
+      scoredHere(st) && (st.phases || []).some(pp => pp.phase === phase.key)
     );
 
     if (phaseCounts.length === 0 && phaseStatuses.length === 0) return;
 
-    let html = `<section class="tower-section" id="${phase.key}-section" style="flex: none; height: auto;">`;
+    let html = `<section class="tower-section" id="${phase.key}-section">`;
     html += `<h1>${phase.title}</h1>`;
-    html += `<div style="display: flex; flex-direction: column; gap: 15px; width: 100%;">`;
+    html += `<div class="custom-controls">`;
 
     phaseCounts.forEach(sc => {
-      html += `<div class="count-control" id="${sc.id}-${phase.key}" style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">`;
-      html += `<span class="count-label" style="font-size: 1.2rem; font-weight: bold;">${sc.display_name}</span>`;
-      html += `<div style="display: flex; align-items: center; gap: 15px;">`;
-      html += `<button class="scoring-button" onclick="adjustCount('${sc.id}', '${phase.key}', -1);" ontouchstart disabled style="font-size: 1.5rem; width: 50px; height: 50px;">-</button>`;
-      html += `<span class="count-value" id="${sc.id}-${phase.key}-count" style="font-size: 1.5rem; min-width: 30px; text-align: center;">0</span>`;
-      html += `<button class="scoring-button" onclick="adjustCount('${sc.id}', '${phase.key}', 1);" ontouchstart disabled style="font-size: 1.5rem; width: 50px; height: 50px;">+</button>`;
+      html += `<div class="count-control" id="${sc.id}-${phase.key}">`;
+      html += `<span class="count-label">${sc.display_name}</span>`;
+      html += `<div class="count-buttons">`;
+      html += `<button class="scoring-button count-button" onclick="adjustCount('${sc.id}', '${phase.key}', -1);"` +
+        ` ontouchstart disabled>-</button>`;
+      html += `<span class="count-value" id="${sc.id}-${phase.key}-count">0</span>`;
+      html += `<button class="scoring-button count-button" onclick="adjustCount('${sc.id}', '${phase.key}', 1);"` +
+        ` ontouchstart disabled>+</button>`;
       html += `</div></div>`;
     });
 
     phaseStatuses.forEach(st => {
-      html += `<div class="status-control" id="${st.id}-status" style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">`;
-      html += `<span class="status-label" style="font-size: 1.2rem; font-weight: bold;">${st.display_name}</span>`;
-      html += `<div style="display: flex; gap: 8px;">`;
+      html += `<div class="status-control" id="${st.id}-status">`;
+      html += `<span class="status-label">${st.display_name}</span>`;
+      html += `<div class="status-teams">`;
 
       for (let i = 0; i < 3; i++) {
-        const teamClass = `team-${i + 1}`;
+        // The team-N class is what handleMatchLoad targets to fill in the team numbers.
+        html += `<div class="status-team team-${i + 1}">`;
+        html += `<span class="team-num"></span>`;
         if (st.values && st.values.length > 0) {
           const defaultLabel = st.values[0] ? st.values[0].display_name : "None";
-          html += `<div class="${teamClass}" style="display: flex; flex-direction: column; align-items: center; gap: 4px;">`;
-          html += `<span class="team-num" style="font-size: 0.85rem; font-weight: bold;"></span>`;
-          html += `<button class="scoring-button status-toggle" id="${st.id}-${i}" onclick="cycleEnumStatus('${st.id}', ${i});" ontouchstart disabled style="width: 80px; height: 45px;">${defaultLabel}</button>`;
-          html += `</div>`;
+          html += `<button class="scoring-button status-toggle enum-toggle" id="${st.id}-${i}"` +
+            ` onclick="cycleEnumStatus('${st.id}', ${i});" ontouchstart disabled>${defaultLabel}</button>`;
         } else {
-          html += `<div class="${teamClass}" style="display: flex; flex-direction: column; align-items: center; gap: 4px;">`;
-          html += `<span class="team-num" style="font-size: 0.85rem; font-weight: bold;"></span>`;
-          html += `<button class="scoring-button status-toggle" id="${st.id}-${i}" onclick="toggleBoolStatus('${st.id}', ${i});" ontouchstart disabled style="width: 60px; height: 45px;"></button>`;
-          html += `</div>`;
+          html += `<button class="scoring-button status-toggle" id="${st.id}-${i}"` +
+            ` onclick="toggleBoolStatus('${st.id}', ${i});" ontouchstart disabled></button>`;
         }
+        html += `</div>`;
       }
 
       html += `</div></div>`;
@@ -276,10 +310,15 @@ const buildCustomUI = function (config) {
 
 $(function () {
   position = window.location.href.split("/").slice(-1)[0];
-  alliance = position;
+  // Custom-game positions are "<alliance>_<near|far>"; the template says which alliance the panel
+  // belongs to and which scorer hint it filters on. The stock template has neither attribute.
+  alliance = $("main").data("alliance") || position;
+  panelScorer = $("main").data("scorer") || "";
   $(".container").attr("data-alliance", alliance);
   resetLocalState();
 
+  // Fetch the game configuration first so that the custom panel exists before the first realtime
+  // score message arrives; the endpoint 404s in the stock build, in which case .done() is skipped.
   $.getJSON("/api/game_config")
     .done(function (config) {
       if (config && config.game && config.game.name) {
@@ -289,6 +328,7 @@ $(function () {
       }
     })
     .always(function () {
+      // Set up the websocket back to the server.
       websocket = new CheesyWebsocket("/panels/scoring/" + position + "/websocket", {
         matchLoad: function (event) {
           handleMatchLoad(event.data);

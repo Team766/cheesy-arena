@@ -22,7 +22,10 @@ Display for showing team rankings.
       </div>
       <div id="standings">
         <table id="header">
-          <tr>
+          {{/* In custom game mode the columns between RP and W-L-T are replaced client-side, from
+               the configured ranking_tiebreakers; see buildCustomStandings() in
+               static/js/rankings_display.js. */}}
+          <tr id="standingsHeaderRow">
             <td class="team-field">Rank</td>
             <td class="team-field">Team</td>
             <td class="team-nickname">Name</td>

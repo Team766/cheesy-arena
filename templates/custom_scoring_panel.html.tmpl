@@ -1,6 +1,6 @@
 {{define "title"}}Custom Scoring Panel{{end}}
 {{define "head"}}
-<link rel="manifest" href="/static/manifest/{{.PositionName}}_scoring.manifest">
+<link rel="manifest" href="/static/manifest/{{.Position.Alliance}}_scoring.manifest">
 <meta name="viewport" content="width=device-width, user-scalable=no">
 <link href="/static/css/scoring_panel.css" rel="stylesheet">
 <link href="/static/css/custom_scoring_panel.css" rel="stylesheet">
@@ -9,9 +9,8 @@
 <header id="banner">
   <div class="screen-title">{{.Position.Title}} - <span id="matchName">&nbsp;</span></div>
 </header>
-<main>
-  <div id="tower-controls" style="display: flex; flex-direction: column; gap: 20px; width: 100%; flex: none; height: auto;">
-  </div>
+<main data-alliance="{{.Position.Alliance}}" data-scorer="{{.Position.Scorer}}">
+  <div id="tower-controls"></div>
   <div id="panel-actions">
     <button id="commit" onclick="commitMatchScore();" ontouchstart disabled>Commit</button>
     <button id="fouls-button" class="scoring-button" onclick="showFoulsDialog();" ontouchstart disabled>Fouls</button>

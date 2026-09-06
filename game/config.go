@@ -5,6 +5,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"os"
 	"regexp"
+	"strings"
 	"sync"
 )
 
@@ -18,6 +19,11 @@ type GameYAML struct {
 	RPs                []RankingPoint `yaml:"ranking_points" json:"ranking_points"`
 	RankingTiebreakers []Tiebreaker   `yaml:"ranking_tiebreakers" json:"ranking_tiebreakers"`
 	PlayoffTiebreakers []Tiebreaker   `yaml:"playoff_tiebreakers" json:"playoff_tiebreakers"`
+
+	// Lookup indexes, built by buildIndexes when the config is activated. Unexported so that they
+	// are neither serialized nor settable from YAML.
+	countByID  map[string]*ScoringCount
+	statusByID map[string]*Status
 }
 
 type GameInfo struct {
@@ -44,6 +50,7 @@ type ScoringCount struct {
 	DisplayName  string        `yaml:"display_name" json:"display_name"`
 	GamePiece    string        `yaml:"game_piece" json:"game_piece"`
 	ScoringGroup string        `yaml:"scoring_group,omitempty" json:"scoring_group,omitempty"`
+	Scorer       string        `yaml:"scorer,omitempty" json:"scorer,omitempty"`
 	Phases       []PhasePoints `yaml:"phases" json:"phases"`
 }
 
@@ -55,9 +62,20 @@ type PhasePoints struct {
 type Status struct {
 	ID          string        `yaml:"id" json:"id"`
 	DisplayName string        `yaml:"display_name" json:"display_name"`
+	Scorer      string        `yaml:"scorer,omitempty" json:"scorer,omitempty"`
 	Phases      []PhasePoints `yaml:"phases" json:"phases"`
 	Values      []StatusValue `yaml:"values,omitempty" json:"values,omitempty"`
 }
+
+// Scorer hint values: which scoring panel (near or far side of the field) is responsible for an
+// element. Empty means every panel shows it.
+const (
+	ScorerNear = "near"
+	ScorerFar  = "far"
+)
+
+// ValidScorers lists the accepted values of the optional scorer field.
+var ValidScorers = map[string]bool{"": true, ScorerNear: true, ScorerFar: true}
 
 type StatusValue struct {
 	ID          string `yaml:"id" json:"id"`
@@ -84,6 +102,32 @@ var goIdentRegexp = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 var validElementPhases = map[string]bool{"auto": true, "teleop": true, "endgame": true}
 var validStatusPhases = map[string]bool{"auto": true, "endgame": true}
 
+// builtinMetricIDs are the summary metrics that exist for every config, in the order MetricIDs
+// reports them.
+var builtinMetricIDs = []string{"auto_points", "teleop_points", "endgame_points", "total_points"}
+
+// builtinMetricLabels are the display names for the built-in metrics.
+var builtinMetricLabels = map[string]string{
+	"auto_points":    "Auto Points",
+	"teleop_points":  "Teleop Points",
+	"endgame_points": "Endgame Points",
+	"total_points":   "Total Points",
+}
+
+// reservedIDs are identifiers that a config may not use for a scoring group, scoring count or
+// status: either they name a built-in metric, or they name a ScoreSummary/RankingFields field that
+// would be ambiguous with one.
+var reservedIDs = map[string]bool{
+	"auto_points":    true,
+	"teleop_points":  true,
+	"endgame_points": true,
+	"total_points":   true,
+	"score":          true,
+	"match_points":   true,
+	"foul_points":    true,
+	"ranking_points": true,
+}
+
 func GetActiveConfig() *GameYAML {
 	activeConfigMu.RLock()
 	defer activeConfigMu.RUnlock()
@@ -91,12 +135,110 @@ func GetActiveConfig() *GameYAML {
 }
 
 func SetActiveConfig(cfg *GameYAML) {
+	if cfg != nil {
+		cfg.buildIndexes()
+	}
 	activeConfigMu.Lock()
-	defer activeConfigMu.Unlock()
 	activeConfig = cfg
+	activeConfigMu.Unlock()
+	applyGameConfigConstants(cfg)
 }
 
-func LoadGameConfig(yamlPath string) (*GameYAML, error) {
+// buildIndexes populates the by-id lookup maps so that the hot-path score mutators don't have to
+// linear-scan the config on every button press.
+func (cfg *GameYAML) buildIndexes() {
+	cfg.countByID = make(map[string]*ScoringCount, len(cfg.ScoringCounts))
+	for i := range cfg.ScoringCounts {
+		cfg.countByID[cfg.ScoringCounts[i].ID] = &cfg.ScoringCounts[i]
+	}
+	cfg.statusByID = make(map[string]*Status, len(cfg.Statuses))
+	for i := range cfg.Statuses {
+		cfg.statusByID[cfg.Statuses[i].ID] = &cfg.Statuses[i]
+	}
+}
+
+// Count returns the scoring count with the given id, or nil.
+func (cfg *GameYAML) Count(id string) *ScoringCount {
+	if cfg == nil {
+		return nil
+	}
+	if cfg.countByID == nil {
+		cfg.buildIndexes()
+	}
+	return cfg.countByID[id]
+}
+
+// Status returns the status with the given id, or nil.
+func (cfg *GameYAML) Status(id string) *Status {
+	if cfg == nil {
+		return nil
+	}
+	if cfg.statusByID == nil {
+		cfg.buildIndexes()
+	}
+	return cfg.statusByID[id]
+}
+
+// Bucket returns the id of the summary bucket a scoring count contributes to: its scoring group if
+// it has one, otherwise its own id.
+func (sc *ScoringCount) Bucket() string {
+	if sc.ScoringGroup != "" {
+		return sc.ScoringGroup
+	}
+	return sc.ID
+}
+
+// MetricIDs returns every metric name that a tiebreaker may reference and that
+// ScoreSummary.GetMetric understands: the built-ins, then each scoring-group bucket in config
+// order, then each status.
+func (cfg *GameYAML) MetricIDs() []string {
+	ids := append([]string(nil), builtinMetricIDs...)
+	if cfg == nil {
+		return ids
+	}
+	for _, sg := range cfg.ScoringGroups {
+		ids = append(ids, sg.ID)
+	}
+	for _, sc := range cfg.ScoringCounts {
+		if sc.ScoringGroup == "" {
+			ids = append(ids, sc.ID)
+		}
+	}
+	for _, st := range cfg.Statuses {
+		ids = append(ids, st.ID)
+	}
+	return ids
+}
+
+// MetricLabel returns the human-readable name for a metric id, falling back to the id itself for
+// anything unrecognized.
+func (cfg *GameYAML) MetricLabel(id string) string {
+	if label, ok := builtinMetricLabels[id]; ok {
+		return label
+	}
+	if cfg != nil {
+		for _, sg := range cfg.ScoringGroups {
+			if sg.ID == id && sg.DisplayName != "" {
+				return sg.DisplayName
+			}
+		}
+		for _, sc := range cfg.ScoringCounts {
+			if sc.ID == id && sc.DisplayName != "" {
+				return sc.DisplayName
+			}
+		}
+		for _, st := range cfg.Statuses {
+			if st.ID == id && st.DisplayName != "" {
+				return st.DisplayName
+			}
+		}
+	}
+	return id
+}
+
+// ReadGameConfig parses and validates the YAML config at the given path without making it the
+// active config.
+func ReadGameConfig(yamlPath string) (*GameYAML, error) {
 	data, err := os.ReadFile(yamlPath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading %s: %w", yamlPath, err)
@@ -108,11 +250,21 @@ func LoadGameConfig(yamlPath string) (*GameYAML, error) {
 	}
 
 	if errs := ValidateGameYAML(&cfg); len(errs) > 0 {
-		return nil, fmt.Errorf("validation errors in %s: %v", yamlPath, errs)
+		return nil, fmt.Errorf("validation errors in %s: %s", yamlPath, strings.Join(errs, "; "))
 	}
 
-	SetActiveConfig(&cfg)
+	cfg.buildIndexes()
 	return &cfg, nil
+}
+
+// LoadGameConfig parses, validates and activates the YAML config at the given path.
+func LoadGameConfig(yamlPath string) (*GameYAML, error) {
+	cfg, err := ReadGameConfig(yamlPath)
+	if err != nil {
+		return nil, err
+	}
+	SetActiveConfig(cfg)
+	return cfg, nil
 }
 
 func ValidateGameYAML(cfg *GameYAML) []string {
@@ -138,6 +290,15 @@ func ValidateGameYAML(cfg *GameYAML) []string {
 		}
 		seenIDs[id] = true
 	}
+	// Scoring groups, scoring counts and statuses all contribute metric names, so their ids may not
+	// shadow a built-in metric or one of the fixed ScoreSummary/RankingFields names.
+	checkReserved := func(id string, context string) {
+		if reservedIDs[id] {
+			validationErrors = append(
+				validationErrors, fmt.Sprintf("%s: id '%s' is reserved", context, id),
+			)
+		}
+	}
 
 	gamePieces := make(map[string]bool)
 	for i, gp := range cfg.GamePieces {
@@ -159,6 +320,7 @@ func ValidateGameYAML(cfg *GameYAML) []string {
 			validationErrors = append(validationErrors, fmt.Sprintf("scoring_groups[%d]: id '%s' must be a valid identifier", i, sg.ID))
 		} else {
 			checkDup(sg.ID, "scoring_groups")
+			checkReserved(sg.ID, fmt.Sprintf("scoring_groups[%d]", i))
 			scoringGroups[sg.ID] = true
 		}
 	}
@@ -173,6 +335,7 @@ func ValidateGameYAML(cfg *GameYAML) []string {
 			continue
 		}
 		checkDup(sc.ID, "scoring_counts")
+		checkReserved(sc.ID, fmt.Sprintf("scoring_counts[%d]", i))
 
 		if sc.GamePiece == "" {
 			validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: game_piece is required", i, sc.ID))
@@ -181,6 +344,9 @@ func ValidateGameYAML(cfg *GameYAML) []string {
 		}
 		if sc.ScoringGroup != "" && !scoringGroups[sc.ScoringGroup] {
 			validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: unknown scoring_group '%s'", i, sc.ID, sc.ScoringGroup))
+		}
+		if !ValidScorers[sc.Scorer] {
+			validationErrors = append(validationErrors, fmt.Sprintf("scoring_counts[%d].%s: scorer must be 'near' or 'far', got '%s'", i, sc.ID, sc.Scorer))
 		}
 
 		if len(sc.Phases) == 0 {
@@ -216,11 +382,23 @@ func ValidateGameYAML(cfg *GameYAML) []string {
 			continue
 		}
 		checkDup(st.ID, "statuses")
+		checkReserved(st.ID, fmt.Sprintf("statuses[%d]", i))
+		if !ValidScorers[st.Scorer] {
+			validationErrors = append(validationErrors, fmt.Sprintf("statuses[%d].%s: scorer must be 'near' or 'far', got '%s'", i, st.ID, st.Scorer))
+		}
 
 		if len(st.Phases) != 1 {
 			validationErrors = append(validationErrors, fmt.Sprintf("statuses[%d].%s: exactly one phase is required", i, st.ID))
 		} else if !validStatusPhases[st.Phases[0].Phase] {
-			validationErrors = append(validationErrors, fmt.Sprintf("statuses[%d].%s.phases[0]: unknown phase '%s'", i, st.ID, st.Phases[0].Phase))
+			validationErrors = append(
+				validationErrors,
+				fmt.Sprintf(
+					"statuses[%d].%s.phases[0]: unknown phase '%s'; only auto and endgame are supported for statuses",
+					i,
+					st.ID,
+					st.Phases[0].Phase,
+				),
+			)
 		}
 
 		if len(st.Values) > 0 {
@@ -259,22 +437,9 @@ func ValidateGameYAML(cfg *GameYAML) []string {
 		}
 	}
 
-	validMetrics := map[string]bool{
-		"auto_points":    true,
-		"teleop_points":  true,
-		"endgame_points": true,
-		"total_points":   true,
-	}
-	for _, sg := range cfg.ScoringGroups {
-		validMetrics[sg.ID] = true
-	}
-	for _, sc := range cfg.ScoringCounts {
-		if sc.ScoringGroup == "" {
-			validMetrics[sc.ID] = true
-		}
-	}
-	for _, st := range cfg.Statuses {
-		validMetrics[st.ID] = true
+	validMetrics := make(map[string]bool)
+	for _, id := range cfg.MetricIDs() {
+		validMetrics[id] = true
 	}
 
 	seenRankingTb := make(map[string]bool)

@@ -72,6 +72,7 @@ UI for manually editing the result for a match.
 <script>
   <!-- @formatter:off -->
   var matchId = {{.Match.Id}};
+  customGameMode = {{isCustom}};
   matchResult = jQuery.parseJSON('{{.MatchResultJson}}');
   allianceResults["red"] = {
     alliance: "red",
@@ -94,6 +95,11 @@ UI for manually editing the result for a match.
 {{define "allianceScore"}}
 <div id="{{.Alliance}}Score" data-alliance="{{.Alliance}}">
   <div class="card card-body bg-{{.Alliance}} mb-3">
+    {{if isCustom}}
+    {{range $phase := .CustomPhases}}
+    {{template "customPhaseFieldset" dict "alliance" $.Alliance "teams" $.Teams "phase" $phase}}
+    {{end}}
+    {{else}}
     <fieldset>
       <legend>Autonomous</legend>
       <h6 class="fw-bold mb-2">Tower</h6>
@@ -129,6 +135,7 @@ UI for manually editing the result for a match.
         {{template "towerStatusRows" dict "alliance" .Alliance "teams" .Teams "field" "EndgameTowerStatuses"}}
       </div>
     </fieldset>
+    {{end}}
     <fieldset>
       <legend>Fouls</legend>
       <div id="{{.Alliance}}Fouls"></div>
@@ -154,6 +161,57 @@ UI for manually editing the result for a match.
   </div>
   {{template "scoreSummaryCard" .}}
 </div>
+{{end}}
+{{/*
+The custom-game score-editing form: one fieldset per configured phase, rendered server-side with
+the stored values. match_review.js reads the values back out via the data-custom-* attributes.
+*/}}
+{{define "customPhaseFieldset"}}
+<fieldset>
+  <legend>{{.phase.DisplayName}}</legend>
+  {{range $count := .phase.Counts}}
+  <div class="row mb-2">
+    <label class="col-lg-3 control-label">{{$count.DisplayName}}</label>
+    <div class="col-lg-2">
+      <input type="number" class="form-control input-sm" min="0" value="{{$count.Value}}"
+             name="{{$.alliance}}Count_{{$count.Key}}" data-custom-count="{{$count.Key}}">
+    </div>
+  </div>
+  {{end}}
+  {{range $status := .phase.BoolStatuses}}
+  <div class="row mb-2">
+    <label class="col-lg-3 control-label">{{$status.DisplayName}}</label>
+    {{range $i, $team := $.teams}}
+    <div class="col-lg-2">
+      <label>
+        <input type="checkbox" name="{{$.alliance}}BoolStatus_{{$status.Id}}_{{$i}}"
+               data-custom-bool-status="{{$status.Id}}" data-robot-index="{{$i}}"
+               {{if index $status.Values $i}}checked{{end}}>
+        Team {{$team}}
+      </label>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+  {{range $status := .phase.EnumStatuses}}
+  <div class="row mb-2">
+    <label class="col-lg-3 control-label">{{$status.DisplayName}}</label>
+    {{range $i, $team := $.teams}}
+    <div class="col-lg-3">
+      <label class="control-label">Team {{$team}}</label>
+      <select class="form-control input-sm" name="{{$.alliance}}EnumStatus_{{$status.Id}}_{{$i}}"
+              data-custom-enum-status="{{$status.Id}}" data-robot-index="{{$i}}">
+        {{range $option := $status.Options}}
+        <option value="{{$option.Index}}"{{if eq $option.Index (index $status.Values $i)}} selected{{end}}>
+          {{$option.DisplayName}}
+        </option>
+        {{end}}
+      </select>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+</fieldset>
 {{end}}
 {{define "hubShiftCount"}}
 <label class="col-lg-1 text-end">{{.label}}:</label>
@@ -205,10 +263,14 @@ UI for manually editing the result for a match.
         {{template "summaryField" dict "label" "Ranking Points" "field" "BonusRankingPoints" "value" .Summary.BonusRankingPoints}}
       </tr>
       {{if .ShowRankingPoints}}
-      {{range $id, $val := .Summary.RPs}}
+      {{$rps := .Summary.RPs}}
+      {{range customRPs}}
       <tr>
-        <td class="text-end font-weight-bold">{{$id}}:</td>
-        <td>{{if $val}}<span class="text-success">&#x2611;</span>{{else}}<span class="text-danger">&#x2612;</span>{{end}}</td>
+        <td class="text-end font-weight-bold">{{.DisplayName}}:</td>
+        <td data-summary-rp="{{.ID}}">
+          {{if index $rps .ID}}<span class="score-summary-rp text-success">&#x2611;</span>
+          {{else}}<span class="score-summary-rp text-danger">&#x2612;</span>{{end}}
+        </td>
       </tr>
       {{end}}
       {{end}}

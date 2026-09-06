@@ -1,13 +1,20 @@
-//go:build !custom
-
 package web
 
 import (
 	"bytes"
-	"fmt"
+	"github.com/Team254/cheesy-arena/game"
 	"net/http"
-	"strconv"
+	"strings"
 )
+
+// One column of a qualification rankings report. The column sets are game-specific and live in
+// reports_rankings_frc.go / reports_rankings_custom.go; the report handlers below are shared.
+type rankingColumn struct {
+	Header string
+	// Width in mm, used by the PDF report only.
+	Width float64
+	Value func(ranking game.Ranking) string
+}
 
 // Generates a CSV-formatted report of the qualification rankings.
 func (web *Web) rankingsCsvReportHandler(w http.ResponseWriter, r *http.Request) {
@@ -19,21 +26,27 @@ func (web *Web) rankingsCsvReportHandler(w http.ResponseWriter, r *http.Request)
 
 	// Don't set the content type as "text/csv", as that will trigger an automatic download in the browser.
 	w.Header().Set("Content-Type", "text/plain")
-	template, err := web.parseFiles("templates/rankings.csv")
-	if err != nil {
-		handleWebErr(w, err)
-		return
-	}
-	var buf bytes.Buffer
-	err = template.ExecuteTemplate(&buf, "rankings.csv", rankings)
-	if err != nil {
-		handleWebErr(w, err)
-		return
+
+	columns := rankingCsvColumns()
+	headers := make([]string, len(columns))
+	for i, column := range columns {
+		headers[i] = column.Header
 	}
 
-	// Strip out carriage returns to ensure consistent behavior across platforms.
-	cleaned := bytes.ReplaceAll(buf.Bytes(), []byte("\r"), []byte(""))
-	if _, err := w.Write(cleaned); err != nil {
+	var buf bytes.Buffer
+	buf.WriteString(strings.Join(headers, ","))
+	buf.WriteString("\n")
+	for _, ranking := range rankings {
+		values := make([]string, len(columns))
+		for i, column := range columns {
+			values[i] = column.Value(ranking)
+		}
+		buf.WriteString(strings.Join(values, ","))
+		buf.WriteString("\n")
+	}
+	buf.WriteString("\n")
+
+	if _, err := w.Write(buf.Bytes()); err != nil {
 		handleWebErr(w, err)
 		return
 	}
@@ -47,18 +60,7 @@ func (web *Web) rankingsPdfReportHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// The widths of the table columns in mm, stored here so that they can be referenced for each row.
-	colWidths := map[string]float64{
-		"Rank":      13,
-		"Team":      20,
-		"RP":        24,
-		"Match":     24,
-		"Auto Fuel": 24,
-		"Tower":     24,
-		"W-L-T":     26,
-		"DQ":        20,
-		"Played":    20,
-	}
+	columns := rankingPdfColumns()
 	rowHeight := 6.5
 
 	pdf := newReportPdf()
@@ -68,31 +70,28 @@ func (web *Web) rankingsPdfReportHandler(w http.ResponseWriter, r *http.Request)
 	pdf.SetFont("Arial", "B", 10)
 	pdf.SetFillColor(220, 220, 220)
 	pdf.CellFormat(195, rowHeight, "Team Standings - "+web.arena.EventSettings.Name, "", 1, "C", false, 0, "")
-	pdf.CellFormat(colWidths["Rank"], rowHeight, "Rank", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(colWidths["Team"], rowHeight, "Team", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(colWidths["RP"], rowHeight, "RP", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(colWidths["Match"], rowHeight, "Match", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(colWidths["Auto Fuel"], rowHeight, "Auto Fuel", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(colWidths["Tower"], rowHeight, "Tower", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(colWidths["W-L-T"], rowHeight, "W-L-T", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(colWidths["DQ"], rowHeight, "DQ", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(colWidths["Played"], rowHeight, "Played", "1", 1, "C", true, 0, "")
+	for i, column := range columns {
+		lineBreak := 0
+		if i == len(columns)-1 {
+			lineBreak = 1
+		}
+		pdf.CellFormat(column.Width, rowHeight, column.Header, "1", lineBreak, "C", true, 0, "")
+	}
+
 	for _, ranking := range rankings {
-		// Render ranking info row.
-		pdf.SetFont("Arial", "B", 10)
-		pdf.CellFormat(colWidths["Rank"], rowHeight, strconv.Itoa(ranking.Rank), "1", 0, "C", false, 0, "")
-		pdf.SetFont("Arial", "", 10)
-		pdf.CellFormat(colWidths["Team"], rowHeight, strconv.Itoa(ranking.TeamId), "1", 0, "C", false, 0, "")
-		pdf.CellFormat(colWidths["RP"], rowHeight, strconv.Itoa(ranking.RankingPoints), "1", 0, "C", false, 0, "")
-		pdf.CellFormat(colWidths["Match"], rowHeight, strconv.Itoa(ranking.MatchPoints), "1", 0, "C", false, 0, "")
-		pdf.CellFormat(
-			colWidths["Auto Fuel"], rowHeight, strconv.Itoa(ranking.AutoFuelPoints), "1", 0, "C", false, 0, "",
-		)
-		pdf.CellFormat(colWidths["Tower"], rowHeight, strconv.Itoa(ranking.TowerPoints), "1", 0, "C", false, 0, "")
-		record := fmt.Sprintf("%d-%d-%d", ranking.Wins, ranking.Losses, ranking.Ties)
-		pdf.CellFormat(colWidths["W-L-T"], rowHeight, record, "1", 0, "C", false, 0, "")
-		pdf.CellFormat(colWidths["DQ"], rowHeight, strconv.Itoa(ranking.Disqualifications), "1", 0, "C", false, 0, "")
-		pdf.CellFormat(colWidths["Played"], rowHeight, strconv.Itoa(ranking.Played), "1", 1, "C", false, 0, "")
+		// Render ranking info row. The rank itself is bold; everything else is not.
+		for i, column := range columns {
+			if i == 0 {
+				pdf.SetFont("Arial", "B", 10)
+			} else if i == 1 {
+				pdf.SetFont("Arial", "", 10)
+			}
+			lineBreak := 0
+			if i == len(columns)-1 {
+				lineBreak = 1
+			}
+			pdf.CellFormat(column.Width, rowHeight, column.Value(ranking), "1", lineBreak, "C", false, 0, "")
+		}
 	}
 
 	addTimeGeneratedFooter(pdf)
@@ -104,8 +103,4 @@ func (web *Web) rankingsPdfReportHandler(w http.ResponseWriter, r *http.Request)
 		handleWebErr(w, err)
 		return
 	}
-}
-
-func isCustomBuild() bool {
-	return false
 }

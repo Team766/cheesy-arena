@@ -2,23 +2,30 @@
 
 package game
 
+// Bonus ranking-point logic for the game defined in custom_game.yaml. Each function is registered
+// under the logic_func name the YAML uses; the server refuses to start if one is missing.
 func init() {
-	RegisterLogicFunc("ComputeAutonRP", ComputeAutonRP)
-	RegisterLogicFunc("ComputeScoringRP", ComputeScoringRP)
-	RegisterLogicFunc("ComputeEndgameRP", ComputeEndgameRP)
+	RegisterLogicFunc("ComputeAdventurerRP", ComputeAdventurerRP)
+	RegisterLogicFunc("ComputeExplorerRP", ComputeExplorerRP)
+	RegisterLogicFunc("ComputeSummitRP", ComputeSummitRP)
 }
 
-// ComputeAutonRP: alliance places more than 2 game pieces on Structure 1 (either level) during auto.
-func ComputeAutonRP(score, opponentScore *Score, summary *ScoreSummary) bool {
-	return score.GetCount("structure1_level1", PhaseAuto)+score.GetCount("structure1_level2", PhaseAuto) > 2
+// AdventurerPointThreshold is the combined shelf and chest score that earns the Adventurer bonus.
+const AdventurerPointThreshold = 30
+
+// ComputeAdventurerRP: the alliance scored at least AdventurerPointThreshold points worth of gems
+// across the shelf (either layer) and the treasure chest, in any phase.
+func ComputeAdventurerRP(score, opponentScore *Score, summary *ScoreSummary) bool {
+	return summary.GroupPoints["shelf"]+summary.GroupPoints["chest"] >= AdventurerPointThreshold
 }
 
-// ComputeScoringRP: alliance places 10 or more game pieces on Structure 1 during teleop.
-func ComputeScoringRP(score, opponentScore *Score, summary *ScoreSummary) bool {
-	return score.GetCount("structure1_level1", PhaseTeleop)+score.GetCount("structure1_level2", PhaseTeleop) >= 10
+// ComputeExplorerRP: all three robots crossed the bridge during auto.
+func ComputeExplorerRP(score, opponentScore *Score, summary *ScoreSummary) bool {
+	return score.CountBoolStatus("bridge") == 3
 }
 
-// ComputeEndgameRP: alliance parks at least two of three robots.
-func ComputeEndgameRP(score, opponentScore *Score, summary *ScoreSummary) bool {
-	return score.CountBoolStatus("park") >= 2
+// ComputeSummitRP: at least two robots finished on the ledge or the summit (ascent value index 1
+// is "ledge", 2 is "summit").
+func ComputeSummitRP(score, opponentScore *Score, summary *ScoreSummary) bool {
+	return score.CountEnumStatus("ascent", 1) >= 2
 }

@@ -2,6 +2,102 @@
 
 package game
 
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"testing"
+)
+
+// fixtureLogicFuncs back the two ranking points declared by game/testdata/fixture.yaml. They are
+// registered only while a test has the fixture active (see LoadFixtureConfig), never at package
+// init, so the shipped binary's handler registry contains exactly what custom_scoring_logic.go
+// registers.
+var fixtureLogicFuncs = map[string]LogicFunc{
+	"FixtureAutoRp":  FixtureAutoRp,
+	"FixtureClimbRp": FixtureClimbRp,
+}
+
+// FixtureAutoRp is achieved when the alliance scores at least 6 auto points.
+func FixtureAutoRp(score, opponentScore *Score, summary *ScoreSummary) bool {
+	return summary.AutoPoints >= 6
+}
+
+// FixtureClimbRp is achieved when at least one robot climbs (enum value index >= 1).
+func FixtureClimbRp(score, opponentScore *Score, summary *ScoreSummary) bool {
+	return score.AnyEnumStatus("climb", 1)
+}
+
+// FixtureConfigPath returns the absolute path of the checked-in test fixture config.
+func FixtureConfigPath() string {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if ok {
+		return filepath.Join(filepath.Dir(thisFile), "testdata", "fixture.yaml")
+	}
+	return filepath.Join("testdata", "fixture.yaml")
+}
+
+// LoadFixtureConfig makes game/testdata/fixture.yaml the active game config for the duration of the
+// test, restoring the previous config afterwards. Tests in any package may call it.
+func LoadFixtureConfig(t testing.TB) *GameYAML {
+	t.Helper()
+	cfg, err := ReadGameConfig(FixtureConfigPath())
+	if err != nil {
+		t.Fatalf("failed to load the test fixture game config: %v", err)
+	}
+	registerFixtureLogicFuncs(t)
+	activateForTest(t, cfg)
+	return cfg
+}
+
+// registerFixtureLogicFuncs installs the fixture's ranking-point handlers for the duration of the
+// test, restoring whatever was registered under those names afterwards.
+func registerFixtureLogicFuncs(t testing.TB) {
+	previous := make(map[string]LogicFunc, len(fixtureLogicFuncs))
+	for name, fn := range fixtureLogicFuncs {
+		previous[name] = Handlers[name]
+		RegisterLogicFunc(name, fn)
+	}
+	t.Cleanup(
+		func() {
+			for name, fn := range previous {
+				if fn == nil {
+					delete(Handlers, name)
+				} else {
+					Handlers[name] = fn
+				}
+			}
+		},
+	)
+}
+
+// LoadTestConfig writes the given YAML text to a temporary file, loads and validates it, and makes
+// it the active game config for the duration of the test. The previous config is restored on
+// cleanup.
+func LoadTestConfig(t testing.TB, yamlText string) *GameYAML {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "test_game.yaml")
+	if err := os.WriteFile(path, []byte(yamlText), 0644); err != nil {
+		t.Fatalf("failed to write the temporary game config: %v", err)
+	}
+	cfg, err := ReadGameConfig(path)
+	if err != nil {
+		t.Fatalf("failed to load the temporary game config: %v", err)
+	}
+	activateForTest(t, cfg)
+	return cfg
+}
+
+func activateForTest(t testing.TB, cfg *GameYAML) {
+	previous := GetActiveConfig()
+	SetActiveConfig(cfg)
+	t.Cleanup(
+		func() {
+			SetActiveConfig(previous)
+		},
+	)
+}
+
 func TestScore1() *Score {
 	fouls := []Foul{
 		{1, true, 25, 16},

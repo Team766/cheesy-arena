@@ -1,121 +1,152 @@
 game:
-  name: "My Custom Game"
+  name: "Gem Quest"
 
 fouls:
   minor_foul_points: 5
   major_foul_points: 15
 
-# game_pieces: Declare the actual physical game pieces. Required on each scoring_counts entry (a
-# count is always "a robot scoring a piece"). Piece identity only — it is not a rollup; to group
-# counts together, give them a shared scoring_group (below).
+# game_pieces: Declare the physical game pieces. Required on each scoring_counts entry (a count is
+# always "a robot scoring a piece"). Piece identity only — it is not a rollup; to group counts
+# together, give them a shared scoring_group (below).
 game_pieces:
-  - id: game_piece_1
-    display_name: "Game Piece 1"
-  - id: game_piece_2
-    display_name: "Game Piece 2"
+  - id: gem
+    display_name: "Gem"
 
 # scoring_groups: Declare rollup buckets. A scoring_counts entry tagged with scoring_group has its
-# live count and points summed into this bucket — both the ScoreSummary point field
-# (summary.<Group>Points) and the audience display. An entry with no scoring_group is its own
-# bucket under its own id (so a lone element needs no wrapper group). Tiebreakers reference buckets.
+# live count and points summed into this bucket — summary.GroupPoints[<group id>] and the audience
+# display. An entry with no scoring_group is its own bucket under its own id (so a lone element
+# needs no wrapper group). Tiebreakers reference buckets by id.
 scoring_groups:
-  - id: structure1
-    display_name: "Struct 1"
-  - id: structure2
-    display_name: "Struct 2"
+  - id: shelf
+    display_name: "Shelf"
+  - id: chest
+    display_name: "Chest"
 
 # scoring_counts: Auto/teleop/endgame counter elements. Each entry lists the phases it can be
 # scored in, each with its own points value (a piece can be worth different points in different
 # phases or on different structures).
+# scorer (optional, near|far): which scoring panel shows this element. /panels/scoring/red_near
+# shows only near-tagged and untagged elements, red_far only far-tagged and untagged ones, and
+# /panels/scoring/red shows everything. Omit it if one scorer covers the whole alliance.
 scoring_counts:
-  - id: structure1_level1
-    display_name: "S1L1"
-    game_piece: game_piece_1
-    scoring_group: structure1
+  # The shelf is a two-layer structure on the near side of the field. Gems on the upper layer are
+  # worth more, and every gem is worth double during auto.
+  - id: shelf_lower
+    display_name: "Lower Shelf"
+    game_piece: gem
+    scoring_group: shelf
+    scorer: near
     phases:
       - phase: auto
-        points: 3
+        points: 2
       - phase: teleop
         points: 1
 
-  - id: structure1_level2
-    display_name: "S1L2"
-    game_piece: game_piece_1
-    scoring_group: structure1
-    phases:
-      - phase: auto
-        points: 5
-      - phase: teleop
-        points: 3
-
-  - id: structure2_level1
-    display_name: "S2"
-    game_piece: game_piece_2
-    scoring_group: structure2
+  - id: shelf_upper
+    display_name: "Upper Shelf"
+    game_piece: gem
+    scoring_group: shelf
+    scorer: near
     phases:
       - phase: auto
         points: 4
       - phase: teleop
         points: 2
 
+  # The treasure chest sits on the far side; a gem dropped in during auto is worth the most.
+  - id: chest_gem
+    display_name: "Chest"
+    game_piece: gem
+    scoring_group: chest
+    scorer: far
+    phases:
+      - phase: auto
+        points: 5
+      - phase: teleop
+        points: 3
+
 # statuses: Per-robot statuses (3 robots per alliance). Phases takes exactly one entry, same
 # {phase, points} shape as scoring_counts (auto or endgame only — teleop is not supported for
 # statuses).
-# No 'values' field: generates [3]bool; phases[0].points is the bool-status point value (sugar
-# for an implicit two-value enum: false = 0 points, true = points).
-# With 'values' as a list: generates a typed enum ([3]{ID}Status) with per-state points instead
-# — phases[0].points is unused in that case.
+# No 'values' field: a yes/no status per robot; phases[0].points is awarded per robot that has it.
+# With 'values' as a list: a multi-state status per robot with per-state points (the first value is
+# the default and must be worth 0); phases[0].points is unused in that case.
 statuses:
-  - id: leave
-    display_name: "Leave"
+  # Crossing the bridge out of the starting cave during auto. No scorer hint, so both panels show it.
+  - id: bridge
+    display_name: "Bridge"
     phases:
       - phase: auto
         points: 3
 
-  - id: muster
-    display_name: "Muster"
+  # Each robot can light a torch during auto, or light it and carry it across the bridge.
+  - id: torch
+    display_name: "Torch"
+    scorer: near
     phases:
       - phase: auto
+    values:
+      - id: unlit
+        display_name: "Unlit"
+        points: 0
+      - id: lit
+        display_name: "Lit"
+        points: 3
+      - id: carried
+        display_name: "Carried"
+        points: 6
+
+  # Endgame: robots climb the cliff face on the far side to the ledge or all the way to the summit...
+  - id: ascent
+    display_name: "Ascent"
+    scorer: far
+    phases:
+      - phase: endgame
     values:
       - id: none
         display_name: "None"
         points: 0
-      - id: partial
-        display_name: "Partial"
-        points: 3
-      - id: full
-        display_name: "Full"
-        points: 6
+      - id: ledge
+        display_name: "Ledge"
+        points: 5
+      - id: summit
+        display_name: "Summit"
+        points: 10
 
-  - id: park
-    display_name: "Park"
+  # ...or retreat to the base camp.
+  - id: camp
+    display_name: "Camp"
+    scorer: far
     phases:
       - phase: endgame
         points: 2
 
-# ranking_points: Custom RP bonus conditions.
-# logic_func must be implemented in game/custom_scoring_logic.go.
+# ranking_points: Bonus ranking points. Each logic_func names a Go function registered in
+# game/custom_scoring_logic.go; the server refuses to start if one is missing.
 ranking_points:
-  - id: auton_rp
-    display_name: "Auto Bonus"
-    logic_func: "ComputeAutonRP"
+  - id: adventurer_rp
+    display_name: "Adventurer"
+    logic_func: "ComputeAdventurerRP"
 
-  - id: scoring_rp
-    display_name: "Score Bonus"
-    logic_func: "ComputeScoringRP"
+  - id: explorer_rp
+    display_name: "Explorer"
+    logic_func: "ComputeExplorerRP"
 
-  - id: endgame_rp
-    display_name: "End Bonus"
-    logic_func: "ComputeEndgameRP"
+  - id: summit_rp
+    display_name: "Summit"
+    logic_func: "ComputeSummitRP"
 
-# ranking_tiebreakers: Drives RankingFields struct fields and Less() sort.
-# Applies after RankingPoints/Played.
+# ranking_tiebreakers: Metrics used, in order, to sort the qualification rankings after ranking
+# points. Metrics are auto_points, teleop_points, endgame_points, total_points, a scoring_group id,
+# or a status id.
 ranking_tiebreakers:
   - metric: total_points
+  - metric: chest
   - metric: auto_points
 
-# playoff_tiebreakers: Drives DetermineMatchStatus() cascade for tied playoff matches.
-# Opponent major fouls are always first (implicit — don't list here).
+# playoff_tiebreakers: Metrics used, in order, to break a tied playoff match. Same metric
+# vocabulary as ranking_tiebreakers. Opponent major fouls are always checked first (implicit).
 playoff_tiebreakers:
   - metric: auto_points
+  - metric: shelf
   - metric: total_points

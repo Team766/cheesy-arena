@@ -55,9 +55,9 @@ func TestScoringPanelWebsocketCustom(t *testing.T) {
 	readWebsocketType(t, blueWs, "matchTime")
 	readWebsocketType(t, blueWs, "realtimeScore")
 
-	// adjustCount / setStatus dispatch is exercised generically here: the per-element id→field routing
-	// and point math are owned by the generated Score tests (generated_score*_test.go, regenerated per
-	// custom_game.yaml), so this test stays config-agnostic. An unknown id is a graceful no-op — the
+	// adjustCount / setStatus dispatch is exercised generically here: the per-element routing and
+	// point math are covered config-derived in game/custom_score_data_test.go, so this test stays
+	// config-agnostic. An unknown id is a graceful no-op — the
 	// handler only broadcasts on a real change — which we confirm below (no points leak into the score).
 	redWs.Write("adjustCount", struct {
 		Id    string
@@ -107,4 +107,23 @@ func TestScoringPanelWebsocketCustom(t *testing.T) {
 	time.Sleep(time.Millisecond * 10) // Allow some time for the commands to be processed.
 	assert.Equal(t, 1, web.arena.ScoringPanelRegistry.GetNumScoreCommitted("red"))
 	assert.Equal(t, 1, web.arena.ScoringPanelRegistry.GetNumScoreCommitted("blue"))
+}
+
+// Custom games add near/far scoring positions per alliance; the template tells the panel JS which
+// alliance and scorer hint it serves.
+func TestScoringPanelCustomNearFarPositions(t *testing.T) {
+	web := setupTestWeb(t)
+
+	for _, position := range []string{"red_near", "red_far", "blue_near", "blue_far"} {
+		recorder := web.getHttpResponse("/panels/scoring/" + position)
+		assert.Equal(t, 200, recorder.Code, position)
+		parameters := positionParameters[position]
+		assert.Contains(t, recorder.Body.String(), `data-alliance="`+parameters.Alliance+`"`)
+		assert.Contains(t, recorder.Body.String(), `data-scorer="`+parameters.Scorer+`"`)
+		assert.Contains(t, recorder.Body.String(), "/static/manifest/"+parameters.Alliance+"_scoring.manifest")
+	}
+
+	// The whole-alliance panels carry no scorer hint.
+	recorder := web.getHttpResponse("/panels/scoring/red")
+	assert.Contains(t, recorder.Body.String(), `data-scorer=""`)
 }

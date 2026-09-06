@@ -94,11 +94,13 @@
 </div>
 {{end}}
 {{define "scoreSummary"}}
+{{/* The rows below the team-number header are appended here by buildRefScoreSummaryUI() in
+     static/js/referee_panel.js once the game configuration has been fetched. They must be direct
+     children of this element for referee_panel.css's "#scoreSummary > div" grid to lay them out. */}}
 <div id="{{.id}}" class="scoreSummary">
   <div class="placeholder"></div>
   <div class="team-1">0</div>
   <div class="team-2">0</div>
   <div class="team-3">0</div>
-  <div id="{{.id}}-dynamic-breakdown"></div>
 </div>
 {{end}}

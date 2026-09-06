@@ -1,225 +1,100 @@
 //go:build custom
 
+// The game-specific half of the scoring panel for a custom game: the template it renders and the
+// four generic websocket commands that mutate a Score. All of the game knowledge lives in the YAML
+// config and is enforced by the Score mutators, so these handlers only decode arguments. The
+// handler and websocket loop they plug into live in scoring_panel.go.
+
 package web
 
 import (
-	"fmt"
-	"github.com/Team254/cheesy-arena/field"
+	"strings"
+
 	"github.com/Team254/cheesy-arena/game"
-	"github.com/Team254/cheesy-arena/model"
 	"github.com/Team254/cheesy-arena/websocket"
 	"github.com/mitchellh/mapstructure"
-	"io"
-	"log"
-	"net/http"
 )
 
-type ScoringPosition struct {
-	Title    string
-	Alliance string
-}
+const scoringPanelTemplatePath = "templates/custom_scoring_panel.html.tmpl"
 
-var positionParameters = map[string]ScoringPosition{
-	"red": {
-		Title:    "Red",
-		Alliance: "red",
-	},
-	"blue": {
-		Title:    "Blue",
-		Alliance: "blue",
-	},
-}
-
-// Renders the scoring interface which enables input of scores in real-time.
-func (web *Web) scoringPanelHandler(w http.ResponseWriter, r *http.Request) {
-	if !web.userIsAdmin(w, r) {
-		return
-	}
-
-	position := r.PathValue("position")
-	parameters, ok := positionParameters[position]
-	if !ok {
-		handleWebErr(w, fmt.Errorf("Invalid position '%s'.", position))
-		return
-	}
-
-	scoringPanelTemplate := "templates/custom_scoring_panel.html.tmpl"
-	template, err := web.parseFiles(scoringPanelTemplate, "templates/base.html")
-	if err != nil {
-		handleWebErr(w, err)
-		return
-	}
-	data := struct {
-		*model.EventSettings
-		PositionName string
-		Position     ScoringPosition
-	}{web.arena.EventSettings, position, parameters}
-	err = template.ExecuteTemplate(w, "base_no_navbar", data)
-	if err != nil {
-		handleWebErr(w, err)
-		return
+// Custom games add a near and a far scoring panel per alliance. An element whose config carries
+// `scorer: near` or `scorer: far` appears only on that panel; the plain red/blue panels still show
+// everything, so an event can run with one or two scorers per alliance.
+func init() {
+	for _, alliance := range []string{"red", "blue"} {
+		for _, scorer := range []string{game.ScorerNear, game.ScorerFar} {
+			positionParameters[alliance+"_"+scorer] = ScoringPosition{
+				Title:    strings.Title(alliance) + " " + strings.Title(scorer),
+				Alliance: alliance,
+				Scorer:   scorer,
+			}
+		}
 	}
 }
 
-// The websocket endpoint for the scoring interface client to send control commands and receive status updates.
-func (web *Web) scoringPanelWebsocketHandler(w http.ResponseWriter, r *http.Request) {
-	if !web.userIsAdmin(w, r) {
-		return
-	}
-
-	position := r.PathValue("position")
-	_, ok := positionParameters[position]
-	if !ok {
-		handleWebErr(w, fmt.Errorf("Invalid position '%s'.", position))
-		return
-	}
-
-	ws, err := websocket.NewWebsocket(w, r)
-	if err != nil {
-		handleWebErr(w, err)
-		return
-	}
-	defer closeWebsocket(ws)
-	web.arena.ScoringPanelRegistry.RegisterPanel(position, ws)
-	web.arena.ScoringStatusNotifier.Notify()
-	defer web.arena.ScoringStatusNotifier.Notify()
-	defer web.arena.ScoringPanelRegistry.UnregisterPanel(position, ws)
-
-	// Instruct panel to clear any local state in case this is a reconnect
-	writeWebsocketMessage(ws, "resetLocalState", nil)
-
-	// Subscribe the websocket to the notifiers whose messages will be passed on to the client, in a separate goroutine.
-	go ws.HandleNotifiers(
-		web.arena.MatchLoadNotifier,
-		web.arena.MatchTimeNotifier,
-		web.arena.RealtimeScoreNotifier,
-		web.arena.ReloadDisplaysNotifier,
-	)
-
-	// Loop, waiting for commands and responding to them, until the client closes the connection.
-	for {
-		command, data, err := ws.Read()
-		if err != nil {
-			if err == io.EOF {
-				return
-			}
-			log.Println(err)
-			return
+// handleScoringPanelGameCommand applies one game-specific scoring command and reports whether the
+// score changed. Unknown commands, and commands naming an element the config doesn't declare, are
+// ignored.
+func handleScoringPanelGameCommand(
+	ws *websocket.Websocket, score *game.Score, command string, data any,
+) bool {
+	switch command {
+	case "adjustCount":
+		// General-purpose command for adjusting the count for a specific game piece; the
+		// game-specific validation is handled within Score.AdjustCount.
+		args := struct {
+			Id    string
+			Phase string
+			Delta int
+		}{}
+		if err := mapstructure.Decode(data, &args); err != nil {
+			writeWebsocketError(ws, err.Error())
+			return false
 		}
-
-		var score *game.Score
-		if position == "red" {
-			score = &web.arena.RedRealtimeScore.CurrentScore
-		} else {
-			score = &web.arena.BlueRealtimeScore.CurrentScore
+		phase, ok := game.PhaseFromString(args.Phase)
+		if !ok {
+			writeWebsocketError(ws, "Invalid phase: "+args.Phase)
+			return false
 		}
-		scoreChanged := false
-
-		if command == "commitMatch" {
-			if web.arena.MatchState != field.PostMatch {
-				writeWebsocketError(ws, "Cannot commit score: Match is not over.")
-				continue
-			}
-			web.arena.ScoringPanelRegistry.SetScoreCommitted(position, ws)
-			web.arena.ScoringStatusNotifier.Notify()
-		} else if command == "addFoul" {
-			args := struct {
-				Alliance string
-				IsMajor  bool
-			}{}
-			err = mapstructure.Decode(data, &args)
-			if err != nil {
-				writeWebsocketError(ws, err.Error())
-				continue
-			}
-
-			// Add the foul to the correct alliance's list.
-			foul := game.Foul{FoulId: web.arena.NextFoulId, IsMajor: args.IsMajor}
-			web.arena.NextFoulId++
-			if args.Alliance == "red" {
-				web.arena.RedRealtimeScore.CurrentScore.Fouls =
-					append(web.arena.RedRealtimeScore.CurrentScore.Fouls, foul)
-			} else {
-				web.arena.BlueRealtimeScore.CurrentScore.Fouls =
-					append(web.arena.BlueRealtimeScore.CurrentScore.Fouls, foul)
-			}
-			web.arena.RealtimeScoreNotifier.Notify()
-		} else if command == "adjustCount" {
-			// general purpose command for adjusting the count for a specific gamepiece
-			// the game-specific logic is handled within Score.AdjustCount
-			args := struct {
-				Id    string
-				Phase string
-				Delta int
-			}{}
-			err = mapstructure.Decode(data, &args)
-			if err != nil {
-				writeWebsocketError(ws, err.Error())
-				continue
-			}
-			var phase game.Phase
-			switch args.Phase {
-			case "auto":
-				phase = game.PhaseAuto
-			case "endgame":
-				phase = game.PhaseEndgame
-			default:
-				phase = game.PhaseTeleop
-			}
-			if score.AdjustCount(args.Id, phase, args.Delta) {
-				scoreChanged = true
-			}
-		} else if command == "setStatus" {
-			// general purpose command for adjusting the boolean status of a robot
-			// the game-specific logic is handled within Score.SetBoolStatus
-			args := struct {
-				Id         string
-				RobotIndex int
-				Value      bool
-			}{}
-			err = mapstructure.Decode(data, &args)
-			if err != nil {
-				writeWebsocketError(ws, err.Error())
-				continue
-			}
-			if score.SetBoolStatus(args.Id, args.RobotIndex, args.Value) {
-				scoreChanged = true
-			}
-		} else if command == "setEnumStatus" {
-			// Same as setStatus, but Value is replaced by ValueId (a custom_game.yaml status value id,
-			// e.g. "full") for statuses declared with an enum `values` list.
-			args := struct {
-				Id         string
-				RobotIndex int
-				ValueId    string
-			}{}
-			err = mapstructure.Decode(data, &args)
-			if err != nil {
-				writeWebsocketError(ws, err.Error())
-				continue
-			}
-			if score.SetEnumStatusByID(args.Id, args.RobotIndex, args.ValueId) {
-				scoreChanged = true
-			}
-		} else if command == "cycleEnumStatus" {
-			// Advances an enum status to its next value, wrapping around — the scoring panel UI
-			// uses one button per robot for enum statuses, cycling through values on each click.
-			args := struct {
-				Id         string
-				RobotIndex int
-			}{}
-			err = mapstructure.Decode(data, &args)
-			if err != nil {
-				writeWebsocketError(ws, err.Error())
-				continue
-			}
-			if score.CycleEnumStatus(args.Id, args.RobotIndex) {
-				scoreChanged = true
-			}
+		return score.AdjustCount(args.Id, phase, args.Delta)
+	case "setStatus":
+		// General-purpose command for adjusting the boolean status of a robot; the game-specific
+		// validation is handled within Score.SetBoolStatus.
+		args := struct {
+			Id         string
+			RobotIndex int
+			Value      bool
+		}{}
+		if err := mapstructure.Decode(data, &args); err != nil {
+			writeWebsocketError(ws, err.Error())
+			return false
 		}
-
-		if scoreChanged {
-			web.arena.RealtimeScoreNotifier.Notify()
+		return score.SetBoolStatus(args.Id, args.RobotIndex, args.Value)
+	case "setEnumStatus":
+		// Same as setStatus, but Value is replaced by ValueId (a custom_game.yaml status value id,
+		// e.g. "full") for statuses declared with an enum `values` list.
+		args := struct {
+			Id         string
+			RobotIndex int
+			ValueId    string
+		}{}
+		if err := mapstructure.Decode(data, &args); err != nil {
+			writeWebsocketError(ws, err.Error())
+			return false
 		}
+		return score.SetEnumStatusByID(args.Id, args.RobotIndex, args.ValueId)
+	case "cycleEnumStatus":
+		// Advances an enum status to its next value, wrapping around — the scoring panel UI uses
+		// one button per robot for enum statuses, cycling through values on each click.
+		args := struct {
+			Id         string
+			RobotIndex int
+		}{}
+		if err := mapstructure.Decode(data, &args); err != nil {
+			writeWebsocketError(ws, err.Error())
+			return false
+		}
+		return score.CycleEnumStatus(args.Id, args.RobotIndex)
 	}
+	return false
 }

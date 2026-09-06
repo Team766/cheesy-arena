@@ -14,6 +14,19 @@ const (
 	PhaseEndgame
 )
 
+// PhaseFromString maps a YAML phase name onto its Phase constant.
+func PhaseFromString(phase string) (Phase, bool) {
+	switch phase {
+	case "auto":
+		return PhaseAuto, true
+	case "teleop":
+		return PhaseTeleop, true
+	case "endgame":
+		return PhaseEndgame, true
+	}
+	return PhaseAuto, false
+}
+
 func (p Phase) String() string {
 	switch p {
 	case PhaseAuto:
@@ -26,17 +39,20 @@ func (p Phase) String() string {
 	return ""
 }
 
+// CustomScoreData and Score deliberately carry no json tags: the JSON keys are the Go field names
+// (Counts, BoolStatuses, EnumStatuses, Fouls, PlayoffDq, Hub), matching the stock build's
+// convention and the keys the web UI reads. game/custom_score_data_test.go pins the exact key set.
 type CustomScoreData struct {
-	Counts       map[string]int     `json:"counts"`
-	BoolStatuses map[string][3]bool `json:"bool_statuses"`
-	EnumStatuses map[string][3]int  `json:"enum_statuses"`
+	Counts       map[string]int
+	BoolStatuses map[string][3]bool
+	EnumStatuses map[string][3]int
 }
 
 type Score struct {
 	CustomScoreData
-	Fouls     []Foul `json:"fouls"`
-	PlayoffDq bool   `json:"playoff_dq"`
-	Hub       Hub    `json:"hub"`
+	Fouls     []Foul
+	PlayoffDq bool
+	Hub       Hub
 }
 
 func (s *Score) ensureInit() {
@@ -68,24 +84,23 @@ func (s *Score) GetCount(id string, phase Phase) int {
 	return s.Counts[key]
 }
 
+// AdjustCount adds delta to the count for the given scoring element and phase, clamping at zero. It
+// returns true if the stored value changed. An unknown element id, an element that is not scored in
+// the given phase, or the absence of an active config all cause the mutation to be rejected.
 func (s *Score) AdjustCount(id string, phase Phase, delta int) bool {
-	cfg := GetActiveConfig()
-	if cfg != nil {
-		valid := false
-		for _, sc := range cfg.ScoringCounts {
-			if sc.ID == id {
-				for _, pp := range sc.Phases {
-					if pp.Phase == phase.String() {
-						valid = true
-						break
-					}
-				}
-				break
-			}
+	count := GetActiveConfig().Count(id)
+	if count == nil {
+		return false
+	}
+	valid := false
+	for _, pp := range count.Phases {
+		if pp.Phase == phase.String() {
+			valid = true
+			break
 		}
-		if !valid {
-			return false
-		}
+	}
+	if !valid {
+		return false
 	}
 
 	s.ensureInit()
@@ -102,22 +117,16 @@ func (s *Score) AdjustCount(id string, phase Phase, delta int) bool {
 	return true
 }
 
+// SetBoolStatus sets a bool status for one robot, returning true if the stored value changed. An
+// unknown id, an enum status, an out-of-range robot index, or the absence of an active config all
+// cause the mutation to be rejected.
 func (s *Score) SetBoolStatus(id string, robotIndex int, value bool) bool {
 	if robotIndex < 0 || robotIndex >= 3 {
 		return false
 	}
-	cfg := GetActiveConfig()
-	if cfg != nil {
-		valid := false
-		for _, st := range cfg.Statuses {
-			if st.ID == id && len(st.Values) == 0 {
-				valid = true
-				break
-			}
-		}
-		if !valid {
-			return false
-		}
+	status := GetActiveConfig().Status(id)
+	if status == nil || len(status.Values) > 0 {
+		return false
 	}
 
 	s.ensureInit()
@@ -138,24 +147,19 @@ func (s *Score) GetBoolStatus(id string, robotIndex int) bool {
 	return s.BoolStatuses[id][robotIndex]
 }
 
+// SetEnumStatus sets an enum status for one robot to the value at the given index, returning true
+// if the stored value changed. An unknown id, a bool status, an out-of-range value or robot index,
+// or the absence of an active config all cause the mutation to be rejected.
 func (s *Score) SetEnumStatus(id string, robotIndex int, valueIndex int) bool {
 	if robotIndex < 0 || robotIndex >= 3 {
 		return false
 	}
-	cfg := GetActiveConfig()
-	if cfg != nil {
-		valid := false
-		for _, st := range cfg.Statuses {
-			if st.ID == id && len(st.Values) > 0 {
-				if valueIndex >= 0 && valueIndex < len(st.Values) {
-					valid = true
-				}
-				break
-			}
-		}
-		if !valid {
-			return false
-		}
+	status := GetActiveConfig().Status(id)
+	if status == nil || len(status.Values) == 0 {
+		return false
+	}
+	if valueIndex < 0 || valueIndex >= len(status.Values) {
+		return false
 	}
 
 	s.ensureInit()
@@ -172,26 +176,16 @@ func (s *Score) SetEnumStatusByID(id string, robotIndex int, valueId string) boo
 	if robotIndex < 0 || robotIndex >= 3 {
 		return false
 	}
-	cfg := GetActiveConfig()
-	if cfg == nil {
+	status := GetActiveConfig().Status(id)
+	if status == nil {
 		return false
 	}
-	valIdx := -1
-	for _, st := range cfg.Statuses {
-		if st.ID == id {
-			for idx, v := range st.Values {
-				if v.ID == valueId {
-					valIdx = idx
-					break
-				}
-			}
-			break
+	for idx, v := range status.Values {
+		if v.ID == valueId {
+			return s.SetEnumStatus(id, robotIndex, idx)
 		}
 	}
-	if valIdx < 0 {
-		return false
-	}
-	return s.SetEnumStatus(id, robotIndex, valIdx)
+	return false
 }
 
 func (s *Score) GetEnumStatus(id string, robotIndex int) int {
@@ -202,26 +196,20 @@ func (s *Score) GetEnumStatus(id string, robotIndex int) int {
 	return s.EnumStatuses[id][robotIndex]
 }
 
+// CycleEnumStatus advances an enum status for one robot to its next value, wrapping around. It
+// returns false for an unknown id, a bool status, an out-of-range robot index, or when no config is
+// active.
 func (s *Score) CycleEnumStatus(id string, robotIndex int) bool {
 	if robotIndex < 0 || robotIndex >= 3 {
 		return false
 	}
-	cfg := GetActiveConfig()
-	numValues := 0
-	if cfg != nil {
-		for _, st := range cfg.Statuses {
-			if st.ID == id {
-				numValues = len(st.Values)
-				break
-			}
-		}
-	}
-	if numValues == 0 {
-		numValues = 3
+	status := GetActiveConfig().Status(id)
+	if status == nil || len(status.Values) == 0 {
+		return false
 	}
 
 	curr := s.GetEnumStatus(id, robotIndex)
-	next := (curr + 1) % numValues
+	next := (curr + 1) % len(status.Values)
 	return s.SetEnumStatus(id, robotIndex, next)
 }
 
@@ -308,6 +296,37 @@ func (s *Score) Clone() *Score {
 		c.EnumStatuses[k] = v
 	}
 	return c
+}
+
+// CopyInto overwrites dst with a deep copy of the score, reusing dst's existing backing storage
+// where possible. The arena calls this once per 10 ms tick to keep a snapshot for change detection,
+// so it must not allocate in the steady state: the maps and the Fouls slice are refilled in place
+// rather than reallocated, which is what makes the custom build's map-based score affordable there.
+func (s *Score) CopyInto(dst *Score) {
+	s.ensureInit()
+	dst.ensureInit()
+
+	fouls := dst.Fouls[:0]
+	counts, boolStatuses, enumStatuses := dst.Counts, dst.BoolStatuses, dst.EnumStatuses
+	clear(counts)
+	clear(boolStatuses)
+	clear(enumStatuses)
+
+	*dst = *s
+	dst.Fouls = append(fouls, s.Fouls...)
+	dst.Counts = counts
+	dst.BoolStatuses = boolStatuses
+	dst.EnumStatuses = enumStatuses
+
+	for k, v := range s.Counts {
+		counts[k] = v
+	}
+	for k, v := range s.BoolStatuses {
+		boolStatuses[k] = v
+	}
+	for k, v := range s.EnumStatuses {
+		enumStatuses[k] = v
+	}
 }
 
 func (s *Score) Equals(other *Score) bool {

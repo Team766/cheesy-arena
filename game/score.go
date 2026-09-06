@@ -23,6 +23,15 @@ func (score *Score) Clone() *Score {
 	return &c
 }
 
+// CopyInto overwrites dst with a deep copy of the score, reusing dst's existing backing storage
+// where possible. The arena calls this once per 10 ms tick to keep a snapshot for change detection,
+// so it must not allocate in the steady state; the Fouls slice is refilled in place.
+func (score *Score) CopyInto(dst *Score) {
+	fouls := dst.Fouls[:0]
+	*dst = *score
+	dst.Fouls = append(fouls, score.Fouls...)
+}
+
 // Game-specific settings that can be changed via the settings.
 var EnergizedBonusThreshold = 100
 var SuperchargedBonusThreshold = 360

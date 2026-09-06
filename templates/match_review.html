@@ -84,8 +84,9 @@ UI for listing matches and their results.
 {{define "rankingPointSymbols"}}
 {{if isCustom}}
 <span class="match-review-rps nowrap">
-  {{range $id, $val := .RPs}}
-  <span class="match-review-rp" title="{{$id}}">{{template "rankingPointSymbol" $val}}</span>
+  {{$rps := .RPs}}
+  {{range customRPs}}
+  <span class="match-review-rp" title="{{.DisplayName}}">{{template "rankingPointSymbol" (index $rps .ID)}}</span>
   {{end}}
 </span>
 {{else}}

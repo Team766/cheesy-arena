@@ -6,15 +6,16 @@ import (
 	"math/rand"
 )
 
+// RankingFields carries no json tags: like the stock build's, its JSON keys are the Go field names.
 type RankingFields struct {
-	RankingPoints     int            `json:"ranking_points"`
-	Tiebreakers       map[string]int `json:"tiebreakers"`
-	Random            float64        `json:"random"`
-	Wins              int            `json:"wins"`
-	Losses            int            `json:"losses"`
-	Ties              int            `json:"ties"`
-	Disqualifications int            `json:"disqualifications"`
-	Played            int            `json:"played"`
+	RankingPoints     int
+	Tiebreakers       map[string]int
+	Random            float64
+	Wins              int
+	Losses            int
+	Ties              int
+	Disqualifications int
+	Played            int
 }
 
 type Ranking struct {

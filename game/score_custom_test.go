@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Hand-written, config-agnostic framework tests. Config-specific correctness — point math, the
-// tiebreak cascade, ranking sort, and the Score mutators — is owned by the generated_*_test.go
-// files (regenerated per custom_game.yaml). Everything here uses only always-present fields.
+// Config-agnostic framework tests. Point math, the tiebreak cascade, ranking sort and the Score
+// mutators are covered config-derived in custom_score_data_test.go and
+// custom_score_summary_data_test.go. Everything here uses only always-present fields.
 
 func TestAddScoreSummary(t *testing.T) {
 	fields := &RankingFields{}
