@@ -9,6 +9,13 @@ let blueFoulsHashCode = 0;
 let scoreIsReady = false;
 let isPostMatch = false;
 
+// True when the server is running a YAML-configured custom game; set from GET /api/game_config
+// during page load, before the websocket is opened, so the realtime handler knows which score
+// shape to expect.
+let IS_CUSTOM_GAME_MODE = false;
+// The parsed /api/game_config document, used to build the score summary and to iterate statuses.
+window.gameConfig = null;
+
 // Sends the foul to the server to add it to the list.
 const addFoul = function (alliance, isMajor) {
   websocket.send("addFoul", {Alliance: alliance, IsMajor: isMajor});
@@ -144,6 +151,49 @@ const setTowerStatus = function (selector, status) {
   $(selector).attr("data-status", status);
 };
 
+// Custom game mode equivalent of the tower-status rows: fills in the per-phase count totals and
+// the per-robot status badges that buildRefScoreSummaryUI created. The custom game.Score
+// serializes as Counts ("<countId>_<phase>" -> int), BoolStatuses (id -> [3]bool) and
+// EnumStatuses (id -> [3]int, indexes into the status' configured values).
+const updateScoreSummaryCustom = function (scoreRoot, score) {
+  if (!window.gameConfig) {
+    return;
+  }
+  const counts = score.Counts || {};
+  const boolStatusesMap = score.BoolStatuses || {};
+  const enumStatusesMap = score.EnumStatuses || {};
+
+  ["auto", "teleop", "endgame"].forEach(phase => {
+    const phaseCounts = (window.gameConfig.scoring_counts || []).filter(sc =>
+      (sc.phases || []).some(pp => pp.phase === phase)
+    );
+    if (phaseCounts.length > 0) {
+      const totals = phaseCounts.map(sc => {
+        const key = `${sc.id}_${phase}`;
+        return counts[key] !== undefined ? counts[key] : 0;
+      });
+      $(`#${scoreRoot} .phase-${phase}`).text(totals.join(" / "));
+    }
+  });
+
+  (window.gameConfig.statuses || []).forEach(st => {
+    if (st.values && st.values.length > 0) {
+      const arr = enumStatusesMap[st.id] || [0, 0, 0];
+      for (let i = 0; i < 3; i++) {
+        const valIdx = arr[i] || 0;
+        const valName = st.values[valIdx] ? st.values[valIdx].display_name : "-";
+        $(`#${scoreRoot} .team-${i + 1}-${st.id}`).text(valName).attr("data-active", valIdx !== 0);
+      }
+    } else {
+      const arr = boolStatusesMap[st.id] || [false, false, false];
+      for (let i = 0; i < 3; i++) {
+        const val = !!arr[i];
+        $(`#${scoreRoot} .team-${i + 1}-${st.id}`).text(val ? "✓" : "✗").attr("data-active", val);
+      }
+    }
+  });
+};
+
 // Handles a websocket message to update the realtime scoring fields.
 const handleRealtimeScore = function (data) {
   for (const [teamId, card] of Object.entries(Object.assign(data.RedCards, data.BlueCards))) {
@@ -169,6 +219,10 @@ const handleRealtimeScore = function (data) {
     }
 
     let scoreRoot = `${alliance}ScoreSummary`;
+    if (IS_CUSTOM_GAME_MODE) {
+      updateScoreSummaryCustom(scoreRoot, score);
+      continue;
+    }
     setTowerStatus(`#${scoreRoot} .team-1-auto-tower`, score.AutoTowerStatuses[0]);
     setTowerStatus(`#${scoreRoot} .team-2-auto-tower`, score.AutoTowerStatuses[1]);
     setTowerStatus(`#${scoreRoot} .team-3-auto-tower`, score.AutoTowerStatuses[2]);
@@ -244,27 +298,80 @@ const hashObject = function (object) {
   return h;
 }
 
+// Custom game mode: replaces the hardcoded tower-status rows of the stock panel with rows derived
+// from the game configuration. The rows are appended as direct children of the score summary
+// element because referee_panel.css lays "#scoreSummary > div" out as a four-column grid; an
+// intermediate wrapper would collapse every row into a single grid cell.
+const buildRefScoreSummaryUI = function (config) {
+  ["redScoreSummary", "blueScoreSummary"].forEach(id => {
+    const container = $(`#${id}`);
+    if (!container.length) {
+      return;
+    }
+    // Leave the team-number header row in place and replace anything built by a previous call.
+    container.find(".config-row").remove();
+
+    let html = "";
+    [
+      {key: "auto", title: "Auto"},
+      {key: "teleop", title: "Teleop"},
+      {key: "endgame", title: "Endgame"},
+    ].forEach(phase => {
+      const phaseCounts = (config.scoring_counts || []).filter(sc =>
+        (sc.phases || []).some(pp => pp.phase === phase.key)
+      );
+      if (phaseCounts.length > 0) {
+        const zeros = phaseCounts.map(() => "0").join(" / ");
+        html += `<div class="config-row label">${phase.title}</div>`;
+        html += `<div class="config-row wide-row count-total phase-${phase.key}">${zeros}</div>`;
+      }
+    });
+
+    (config.statuses || []).forEach(st => {
+      html += `<div class="config-row label">${st.display_name}</div>`;
+      for (let i = 1; i <= 3; i++) {
+        html += `<div class="config-row status-badge team-${i}-${st.id}" data-active="false">-</div>`;
+      }
+    });
+
+    container.append(html);
+  });
+};
+
 $(function () {
   // Read the configuration for this display from the URL query string.
   var urlParams = new URLSearchParams(window.location.search);
   $(".headRef-dependent").attr("data-hr", urlParams.get("hr"));
 
-  // Set up the websocket back to the server.
-  websocket = new CheesyWebsocket("/panels/referee/websocket", {
-    matchLoad: function (event) {
-      handleMatchLoad(event.data);
-    },
-    matchTime: function (event) {
-      handleMatchTime(event.data);
-    },
-    realtimeScore: function (event) {
-      handleRealtimeScore(event.data);
-    },
-    scoringStatus: function (event) {
-      handleScoringStatus(event.data);
-    },
-    arenaStatus: function (event) {
-      handleArenaStatus(event.data);
-    },
-  });
+  // Fetch the game configuration first so that the score summary rows exist before the first
+  // realtime score message arrives; the endpoint 404s in the stock build, in which case .done()
+  // is skipped and the panel keeps its server-rendered tower-status rows.
+  $.getJSON("/api/game_config")
+    .done(function (config) {
+      if (config && config.game && config.game.name) {
+        IS_CUSTOM_GAME_MODE = true;
+        window.gameConfig = config;
+        buildRefScoreSummaryUI(config);
+      }
+    })
+    .always(function () {
+      // Set up the websocket back to the server.
+      websocket = new CheesyWebsocket("/panels/referee/websocket", {
+        matchLoad: function (event) {
+          handleMatchLoad(event.data);
+        },
+        matchTime: function (event) {
+          handleMatchTime(event.data);
+        },
+        realtimeScore: function (event) {
+          handleRealtimeScore(event.data);
+        },
+        scoringStatus: function (event) {
+          handleScoringStatus(event.data);
+        },
+        arenaStatus: function (event) {
+          handleArenaStatus(event.data);
+        },
+      });
+    });
 });
