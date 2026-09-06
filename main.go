@@ -19,6 +19,10 @@ func main() {
 	flag.BoolVar(&network.DevMode, "dev", false, "Bind driver station listeners to all IP addresses for development")
 	flag.Parse()
 
+	// Load and validate the custom game configuration, if this is a custom-game build. Fatal on any
+	// problem; there is no silent fallback.
+	initCustomGame()
+
 	arena, err := field.NewArena(eventDbPath)
 	if err != nil {
 		log.Fatalln("Error during startup: ", err)
