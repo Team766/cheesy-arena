@@ -12,6 +12,11 @@ var websocket;
 let transitionMap;
 const transitionQueue = [];
 let transitionInProgress = false;
+
+// True when the server is running a YAML-configured custom game; set from GET /api/game_config
+// during page load, before the websocket is opened, so the realtime and score-posted handlers
+// know which score shape to expect and the overlay has already been built.
+let IS_CUSTOM_GAME_MODE = false;
 let currentScreen = "blank";
 let redSide;
 let blueSide;
@@ -722,6 +727,224 @@ const setTeamInfo = function (side, position, teamId, cards, rankings) {
   rankNumberElement.toggle(teamId > 0);
 };
 
+// Custom game mode: the live counter boxes shown beside the score during a match. There is one
+// per scoring group plus one per scoring count that isn't in a group, and each shows the sum of
+// that group's raw counts (game pieces scored), not its points.
+const customLiveCounters = function (config) {
+  const counters = [];
+  const addCounter = function (id, label) {
+    if (!counters.some(existing => existing.id === id)) {
+      counters.push({id: id, label: label, countKeys: []});
+    }
+  };
+  (config.scoring_groups || []).forEach(sg => addCounter(sg.id, sg.display_name));
+  (config.scoring_counts || []).forEach(sc => {
+    if (!sc.scoring_group) {
+      addCounter(sc.id, sc.display_name);
+    }
+  });
+  (config.scoring_counts || []).forEach(sc => {
+    const counter = counters.find(candidate => candidate.id === (sc.scoring_group || sc.id));
+    if (counter) {
+      (sc.phases || []).forEach(pp => counter.countKeys.push(`${sc.id}_${pp.phase}`));
+    }
+  });
+  return counters;
+};
+
+// Custom game mode: the point breakdown rows of the final score screen, in display order. Both
+// buildCustomAudienceUI and handleScorePostedCustom derive their element ids from this list, so
+// the DOM builder and the handler cannot drift apart.
+const customBreakdownRows = function (config) {
+  const rows = [];
+  (config.scoring_groups || []).forEach(sg => {
+    rows.push({id: sg.id, elementId: `${sg.id}Points`, label: sg.display_name, source: "group"});
+  });
+  (config.scoring_counts || []).forEach(sc => {
+    if (!sc.scoring_group && !rows.some(row => row.id === sc.id)) {
+      rows.push({id: sc.id, elementId: `${sc.id}Points`, label: sc.display_name, source: "group"});
+    }
+  });
+  (config.statuses || []).forEach(st => {
+    rows.push({id: st.id, elementId: `${st.id}Points`, label: st.display_name, source: "status"});
+  });
+  rows.push({id: "foul", elementId: "FoulPoints", label: "Foul", source: "foul"});
+  return rows;
+};
+
+// Custom game mode: builds the parts of the overlay and the final score screen that depend on the
+// game configuration. Presentation lives in static/css/custom_audience_display.css.
+const buildCustomAudienceUI = function (config) {
+  const leftFields = $("#leftScoreFields");
+  const rightFields = $("#rightScoreFields");
+  if (leftFields.length && rightFields.length) {
+    leftFields.empty();
+    rightFields.empty();
+
+    customLiveCounters(config).forEach(counter => {
+      const box = function (side) {
+        return `<div class="live-counter-box">` +
+          `<span class="live-counter-label">${counter.label}</span>` +
+          `<span class="live-counter-value" id="${side}${counter.id}Count">0</span>` +
+          `</div>`;
+      };
+      leftFields.append(box("left"));
+      rightFields.append(box("right"));
+    });
+  }
+
+  const leftBreakdown = $("#leftFinalBreakdown");
+  const centerBreakdown = $("#centerFinalBreakdown");
+  const rightBreakdown = $("#rightFinalBreakdown");
+  if (leftBreakdown.length && centerBreakdown.length && rightBreakdown.length) {
+    leftBreakdown.empty();
+    centerBreakdown.empty();
+    rightBreakdown.empty();
+
+    customBreakdownRows(config).forEach(row => {
+      centerBreakdown.append(`<div>${row.label}</div>`);
+      leftBreakdown.append(`<div id="leftFinal${row.elementId}">0</div>`);
+      rightBreakdown.append(`<div id="rightFinal${row.elementId}">0</div>`);
+    });
+
+    // The breakdown box has a fixed height; tell the stylesheet how many rows it must fit (the
+    // rows above plus one per bonus ranking point and the ranking-point total) so it can shrink
+    // the row spacing for a game with many elements.
+    const breakdownRowCount = customBreakdownRows(config).length + (config.ranking_points || []).length + 1;
+    document.documentElement.style.setProperty("--breakdown-rows", String(breakdownRowCount));
+
+    // Bonus ranking points are only meaningful outside the playoffs; the playoff-only field below
+    // shows the alliance's win count in the series instead. handleScorePosted* toggles the two.
+    let centerRankingPoints = '<div class="playoff-hidden-field">';
+    let leftRankingPoints = '<div class="playoff-hidden-field">';
+    let rightRankingPoints = '<div class="playoff-hidden-field">';
+    (config.ranking_points || []).forEach(rp => {
+      centerRankingPoints += `<div>${rp.display_name}</div>`;
+      leftRankingPoints += `<div id="leftFinal${rp.id}RankingPoint" data-checked="false">&#x2718;</div>`;
+      rightRankingPoints += `<div id="rightFinal${rp.id}RankingPoint" data-checked="false">&#x2718;</div>`;
+    });
+    centerRankingPoints += "<div>Ranking Points</div></div>";
+    leftRankingPoints += '<div id="leftFinalRankingPoints">0</div></div>';
+    rightRankingPoints += '<div id="rightFinalRankingPoints">0</div></div>';
+
+    centerRankingPoints += '<div class="playoff-only-field"><div>&nbsp;</div><div>Wins</div></div>';
+    leftRankingPoints += '<div class="playoff-only-field"><div>&nbsp;</div><div id="leftFinalWins">0</div></div>';
+    rightRankingPoints += '<div class="playoff-only-field"><div>&nbsp;</div><div id="rightFinalWins">0</div></div>';
+
+    centerBreakdown.append(centerRankingPoints);
+    leftBreakdown.append(leftRankingPoints);
+    rightBreakdown.append(rightRankingPoints);
+  }
+};
+
+// Custom game mode equivalent of handleRealtimeScore. The custom game.Score serializes its counts
+// as Counts ("<countId>_<phase>" -> int) and the summary carries the running total in Score.
+const handleRealtimeScoreCustom = function (data) {
+  const redScore = (data.Red && data.Red.Score) || {};
+  const blueScore = (data.Blue && data.Blue.Score) || {};
+  const redSummary = (data.Red && data.Red.ScoreSummary) || {};
+  const blueSummary = (data.Blue && data.Blue.ScoreSummary) || {};
+
+  if (window.gameConfig) {
+    const redCounts = redScore.Counts || {};
+    const blueCounts = blueScore.Counts || {};
+    customLiveCounters(window.gameConfig).forEach(counter => {
+      const total = function (counts) {
+        return counter.countKeys.reduce((sum, key) => sum + (counts[key] || 0), 0);
+      };
+      $(`#${redSide}${counter.id}Count`).text(total(redCounts));
+      $(`#${blueSide}${counter.id}Count`).text(total(blueCounts));
+    });
+  }
+
+  $(`#${redSide}ScoreNumber`).text(redSummary.Score || 0);
+  $(`#${blueSide}ScoreNumber`).text(blueSummary.Score || 0);
+};
+
+// Populates one alliance's half of the custom final score screen.
+const setCustomFinalAllianceFields = function (side, alliance, data) {
+  const summary = data[`${alliance}ScoreSummary`] || {};
+  const groupPoints = summary.GroupPoints || {};
+  const statusPoints = summary.StatusPoints || {};
+  const rankingPointsWon = summary.RPs || {};
+  const cards = data[`${alliance}Cards`];
+  const rankings = data[`${alliance}Rankings`];
+  const offFieldTeamIds = data[`${alliance}OffFieldTeamIds`] || [];
+  const destination = data[`${alliance}Destination`] || "";
+  const won = data[`${alliance}Won`];
+
+  $(`#${side}FinalScore`).text(summary.Score || 0);
+  $(`#${side}FinalAlliance`).text("Alliance " + data.Match[`Playoff${alliance}Alliance`]);
+  setTeamInfo(side, 1, data.Match[`${alliance}1`], cards, rankings);
+  setTeamInfo(side, 2, data.Match[`${alliance}2`], cards, rankings);
+  setTeamInfo(side, 3, data.Match[`${alliance}3`], cards, rankings);
+  setTeamInfo(side, 4, offFieldTeamIds.length > 0 ? offFieldTeamIds[0] : 0, cards, rankings);
+
+  if (window.gameConfig) {
+    customBreakdownRows(window.gameConfig).forEach(row => {
+      let points;
+      if (row.source === "group") {
+        points = groupPoints[row.id];
+      } else if (row.source === "status") {
+        points = statusPoints[row.id];
+      } else {
+        points = summary.FoulPoints;
+      }
+      $(`#${side}Final${row.elementId}`).text(points || 0);
+    });
+    (window.gameConfig.ranking_points || []).forEach(rp => {
+      const element = $(`#${side}Final${rp.id}RankingPoint`);
+      element.html(rankingPointsWon[rp.id] ? "&#x2714;" : "&#x2718;");
+      element.attr("data-checked", !!rankingPointsWon[rp.id]);
+    });
+  }
+
+  $(`#${side}FinalRankingPoints`).html(data[`${alliance}RankingPoints`]);
+  $(`#${side}FinalWins`).text(data[`${alliance}Wins`]);
+  const finalDestination = $(`#${side}FinalDestination`);
+  finalDestination.html(destination.replace("Advances to ", "Advances to<br>"));
+  finalDestination.toggle(destination !== "");
+  finalDestination.attr("data-won", won);
+};
+
+// Custom game mode equivalent of handleScorePosted.
+const handleScorePostedCustom = function (data) {
+  if (data.RedWon) {
+    setFinalResultIndicator(redSide, "WINNER", "winner");
+    setFinalResultIndicator(blueSide, "", "");
+  } else if (data.BlueWon) {
+    setFinalResultIndicator(redSide, "", "");
+    setFinalResultIndicator(blueSide, "WINNER", "winner");
+  } else {
+    setFinalResultIndicator(redSide, "TIE", "tie");
+    setFinalResultIndicator(blueSide, "TIE", "tie");
+  }
+  const tiebreakReason = data.TiebreakReason || "";
+  $("#finalTiebreakReason").text(tiebreakReason);
+  $("#finalTiebreakReason").attr("data-visible", tiebreakReason !== "");
+
+  setCustomFinalAllianceFields(redSide, "Red", data);
+  setCustomFinalAllianceFields(blueSide, "Blue", data);
+
+  let matchName = data.Match.LongName;
+  if (data.Match.NameDetail !== "") {
+    matchName += " &ndash; " + data.Match.NameDetail;
+  }
+  $("#finalMatchName").html(matchName);
+
+  // Reload the bracket to reflect any changes.
+  $("#bracketSvg").attr("src", "/api/bracket/svg?activeMatch=saved&v=" + new Date().getTime());
+
+  if (data.Match.Type === matchTypePlayoff) {
+    // Hide bonus ranking points and show playoff-only fields.
+    $(".playoff-hidden-field").hide();
+    $(".playoff-only-field").show();
+  } else {
+    $(".playoff-hidden-field").show();
+    $(".playoff-only-field").hide();
+  }
+};
+
 $(function () {
   // Read the configuration for this display from the URL query string.
   const urlParams = new URLSearchParams(window.location.search);
@@ -738,36 +961,57 @@ $(function () {
     overlayCenteringShowParams = overlayCenteringBottomShowParams;
   }
 
-  // Set up the websocket back to the server.
-  websocket = new CheesyWebsocket("/displays/audience/websocket", {
-    allianceSelection: function (event) {
-      handleAllianceSelection(event.data);
-    },
-    audienceDisplayMode: function (event) {
-      handleAudienceDisplayMode(event.data);
-    },
-    lowerThird: function (event) {
-      handleLowerThird(event.data);
-    },
-    matchLoad: function (event) {
-      handleMatchLoad(event.data);
-    },
-    matchTime: function (event) {
-      handleMatchTime(event.data);
-    },
-    matchTiming: function (event) {
-      handleMatchTiming(event.data);
-    },
-    playSound: function (event) {
-      handlePlaySound(event.data);
-    },
-    realtimeScore: function (event) {
-      handleRealtimeScore(event.data);
-    },
-    scorePosted: function (event) {
-      handleScorePosted(event.data);
-    },
-  });
+  // Fetch the game configuration and build the custom overlay before opening the websocket, so
+  // that the elements the custom handlers target exist by the time the first message arrives. The
+  // endpoint 404s in the stock build, in which case .done() is skipped.
+  $.getJSON("/api/game_config")
+    .done(function (config) {
+      if (config && config.game && config.game.name) {
+        IS_CUSTOM_GAME_MODE = true;
+        window.gameConfig = config;
+        buildCustomAudienceUI(config);
+      }
+    })
+    .always(function () {
+      // Set up the websocket back to the server.
+      websocket = new CheesyWebsocket("/displays/audience/websocket", {
+        allianceSelection: function (event) {
+          handleAllianceSelection(event.data);
+        },
+        audienceDisplayMode: function (event) {
+          handleAudienceDisplayMode(event.data);
+        },
+        lowerThird: function (event) {
+          handleLowerThird(event.data);
+        },
+        matchLoad: function (event) {
+          handleMatchLoad(event.data);
+        },
+        matchTime: function (event) {
+          handleMatchTime(event.data);
+        },
+        matchTiming: function (event) {
+          handleMatchTiming(event.data);
+        },
+        playSound: function (event) {
+          handlePlaySound(event.data);
+        },
+        realtimeScore: function (event) {
+          if (IS_CUSTOM_GAME_MODE) {
+            handleRealtimeScoreCustom(event.data);
+          } else {
+            handleRealtimeScore(event.data);
+          }
+        },
+        scorePosted: function (event) {
+          if (IS_CUSTOM_GAME_MODE) {
+            handleScorePostedCustom(event.data);
+          } else {
+            handleScorePosted(event.data);
+          }
+        },
+      });
+    });
 
   // Map how to transition from one screen to another. Missing links between screens indicate that first we
   // must transition to the blank screen and then to the target screen.

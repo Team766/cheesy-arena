@@ -1,0 +1,89 @@
+/*
+  Custom-game audience display styles. Loaded in addition to the shared audience_display.css, only
+  by templates/custom_audience_display.html.tmpl. These selectors cover the branding differences of
+  a custom game plus the live counter boxes that buildCustomAudienceUI() in
+  static/js/audience_display.js emits, so they're kept out of the shared stylesheet.
+*/
+
+/* The custom game logo is a circular badge, so let it fill the whole 150px match circle instead of
+   the shared stylesheet's letterboxed-banner sizing. "top" must be !important: audience_display.js
+   animates #logo's top (logoUp/logoDown) to make room for the FRC banner's countdown below it, and
+   a full-circle badge has no room to give. The countdown is overlaid on the bottom of the badge
+   instead (see #matchTime), so nothing needs to move. */
+#logo {
+  top: 0 !important;
+  width: 150px;
+  height: 150px;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+/* Countdown as a translucent pill over the lower part of the badge. The shared stylesheet lays it
+   out below the logo in normal flow; absolute positioning takes it out of flow so it does not push
+   past the circle. Its opacity is still animated by audience_display.js. */
+#matchTime {
+  position: absolute;
+  top: auto;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  height: auto;
+  line-height: 1;
+  padding: 5px 14px;
+  border-radius: 20px;
+  background-color: rgba(255, 255, 255, 0.9);
+  font-size: 30px;
+}
+
+#blindsLogo {
+  top: 0;
+  width: 310px;
+  height: 310px;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+/* The number of live counters depends on the game configuration, so space them rather than relying
+   on the fixed-width per-field boxes of the stock overlay. */
+#leftScoreFields,
+#rightScoreFields {
+  gap: 15px;
+  align-items: center;
+}
+
+.live-counter-box {
+  min-width: 70px;
+  height: 75px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.live-counter-label {
+  color: #ccc;
+  font-size: 10px;
+  font-weight: bold;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.live-counter-value {
+  color: #fff;
+  font-size: 28px;
+  font-weight: bold;
+}
+
+/* The final-score breakdown lists one row per scoring group, status, foul and bonus ranking point,
+   so its row count depends on the game. audience_display.js sets --breakdown-rows; fit that many
+   rows into the fixed-height box by tightening the line spacing and, past ten rows, the font. */
+.final-breakdown div {
+  line-height: 1.2;
+}
+.final-breakdown {
+  font-size: min(24px, calc(370px / var(--breakdown-rows, 10) / 1.2));
+}
